@@ -8,8 +8,8 @@
     "oc-session-manager": "dist/oc-session-manager.mjs"
   },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsup src/index.ts --format esm --outDir dist --clean && mv dist/index.js dist/oc-session-manager.mjs",
+    "dev": "tsx watch src/index.tsx",
+    "build": "tsup src/index.tsx --format esm --outDir dist --clean && mv dist/index.js dist/oc-session-manager.mjs",
     "start": "node dist/oc-session-manager.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -26,10 +26,13 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@opencode-ai/sdk": "latest"
+    "@opencode-ai/sdk": "latest",
+    "ink": "^6.6.0",
+    "react": "^19.2.3"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/react": "^19.2.7",
     "@vitest/coverage-v8": "^4.0.16",
     "tsup": "^8.0.0",
     "tsx": "^4.0.0",

@@ -73,6 +73,10 @@ export const ANSI = {
   clearScreen: '\x1b[2J',
   clearLine: '\x1b[2K',
   
+  // Alternate screen buffer (like vim, htop, less)
+  enterAltScreen: '\x1b[?1049h',
+  exitAltScreen: '\x1b[?1049l',
+  
   // Inverse (swap fg/bg)
   inverse: '\x1b[7m',
 }
