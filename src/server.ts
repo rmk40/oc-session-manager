@@ -308,16 +308,20 @@ export function startServer(options: { debug?: boolean } = {}): void {
         const oldStatus = oldInst ? getEffectiveStatus(oldInst) : null
         const newStatus = data.status
         
-        // Track when instance became busy
-        if (newStatus === 'busy' && oldStatus !== 'busy') {
-          busySince.set(data.instanceId, Date.now())
+        // Track when instance became busy or idle
+        if (newStatus === 'busy') {
+          if (oldStatus !== 'busy') {
+            busySince.set(data.instanceId, Date.now())
+          }
           idleSince.delete(data.instanceId)
-        } else if (newStatus === 'idle' && oldStatus !== 'idle') {
-          idleSince.set(data.instanceId, Date.now())
+        } else if (newStatus === 'idle') {
+          if (oldStatus !== 'idle') {
+            idleSince.set(data.instanceId, Date.now())
+          }
           busySince.delete(data.instanceId)
-        } else if (newStatus !== 'busy') {
+        } else {
+          // shutdown or other status - clear both
           busySince.delete(data.instanceId)
-        } else if (newStatus !== 'idle') {
           idleSince.delete(data.instanceId)
         }
         

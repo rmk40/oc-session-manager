@@ -249,7 +249,9 @@ function renderSessionViewInput(height: number): string {
 
 function renderSessionViewWithPermissions(height: number): string {
   // Get first pending permission
-  const [permId, perm] = sessionViewPendingPermissions.entries().next().value
+  const entry = sessionViewPendingPermissions.entries().next().value
+  if (!entry) return renderSessionViewContent(height)
+  const [permId, perm] = entry
   
   let output = ''
   const boxHeight = 8
