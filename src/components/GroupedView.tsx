@@ -85,7 +85,10 @@ export const GroupedView = React.memo((): React.ReactElement => {
               </Text>
               <Text>{"  "}</Text>
               {statusParts.map((part, i) => (
-                <React.Fragment key={i}>{part}{i < statusParts.length - 1 ? ' ' : ''}</React.Fragment>
+                <React.Fragment key={i}>
+                  {part}
+                  {i < statusParts.length - 1 ? <Text>{" "}</Text> : null}
+                </React.Fragment>
               ))}
               {costStr && <Text dimColor> {costStr}</Text>}
               {tokStr && <Text dimColor> {tokStr}</Text>}

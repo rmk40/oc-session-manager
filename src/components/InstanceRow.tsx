@@ -82,7 +82,7 @@ export const InstanceRow = React.memo(({
         {width > 130 && instance.tokens && (
           <Text dimColor> ({instance.tokens.input}i/{instance.tokens.output}o)</Text>
         )}
-        {'  '}
+        <Text>{"  "}</Text>
         <RelativeTime instance={instance} />
       </Box>
     </Box>

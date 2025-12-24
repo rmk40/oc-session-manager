@@ -75,7 +75,8 @@ export const SessionView = React.memo((): React.ReactElement => {
                           <Text bold dimColor underline>OTHER SESSIONS</Text>
                           {sessionViewSessions.slice(0, 10).map((sess, idx) => (
                               <Text key={sess.id} color={idx === sessionViewSessionIndex ? "cyan" : undefined}>
-                                  {idx === sessionViewSessionIndex ? "➔" : " "} {truncate(sess.title || sess.id?.slice(0, 8), 30)}
+                                  <Text>{idx === sessionViewSessionIndex ? "➔" : " "}</Text>
+                                  <Text>{truncate(sess.title || sess.id?.slice(0, 8), 30)}</Text>
                               </Text>
                           ))}
                       </Box>
@@ -96,8 +97,10 @@ export const SessionView = React.memo((): React.ReactElement => {
             
             return (
               <Box key={sess.id || `session-${idx}`} marginRight={1}>
-                <Text inverse={isCurrent} color={sessColor}>{sessIcon}</Text>
-                <Text inverse={isCurrent}> {label}</Text>
+                <Text inverse={isCurrent} color={sessColor}>
+                  <Text>{sessIcon}</Text>
+                  <Text> {label}</Text>
+                </Text>
               </Box>
             )
           })}
@@ -107,11 +110,11 @@ export const SessionView = React.memo((): React.ReactElement => {
       {/* Help bar at bottom */}
       <Box borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false} marginTop={1}>
         <Text dimColor>
-          [Esc] back  [↑↓] scroll
-          {hasMultipleSessions && '  [Ctrl+←/→] switch session'}
-          {(status === 'busy' || status === 'running' || status === 'pending') && '  [a]bort'}
-          {sessionViewPendingPermissions.size > 0 && '  [p]ermissions'}
-          {'  [m]essage'}
+          <Text>[Esc] back  [↑↓] scroll</Text>
+          {hasMultipleSessions && <Text>  [Ctrl+←/→] switch session</Text>}
+          {(status === 'busy' || status === 'running' || status === 'pending') && <Text>  [a]bort</Text>}
+          {sessionViewPendingPermissions.size > 0 && <Text>  [p]ermissions</Text>}
+          <Text>  [m]essage</Text>
         </Text>
       </Box>
     </Box>
