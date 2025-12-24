@@ -73,6 +73,14 @@ export const ANSI = {
   clearScreen: '\x1b[2J',
   clearLine: '\x1b[2K',
   
+  // Alternate screen buffer (like vim, less, htop)
+  enterAltScreen: '\x1b[?1049h',
+  exitAltScreen: '\x1b[?1049l',
+  
+  // Mouse tracking
+  enableMouse: '\x1b[?1000h\x1b[?1002h\x1b[?1006h',  // Click + drag + SGR extended mode
+  disableMouse: '\x1b[?1006l\x1b[?1002l\x1b[?1000l',
+  
   // Inverse (swap fg/bg)
   inverse: '\x1b[7m',
 }

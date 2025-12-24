@@ -1,4 +1,4 @@
-// Keyboard input handling
+// Keyboard and mouse input handling
 
 import * as readline from 'node:readline'
 import type { KeyEvent } from './types.js'
@@ -20,6 +20,7 @@ import {
   sessionViewConfirmAbort,
   sessionViewPendingPermissions,
   sessionViewStatus,
+  sessionViewRenderedLines,
   setViewMode,
   setSelectedIndex,
   setDetailView,
@@ -42,14 +43,23 @@ import {
 } from './session.js'
 
 // ---------------------------------------------------------------------------
+// Terminal Cleanup (defined early for use in handlers)
+// ---------------------------------------------------------------------------
+
+function cleanupTerminal(): void {
+  process.stdout.write(ANSI.disableMouse)
+  process.stdout.write(ANSI.showCursor)
+  process.stdout.write(ANSI.exitAltScreen)
+}
+
+// ---------------------------------------------------------------------------
 // Main List Keyboard Handler
 // ---------------------------------------------------------------------------
 
 function handleMainKeypress(str: string, key: KeyEvent): void {
   // Quit
   if (key.name === 'q' || (key.ctrl && key.name === 'c')) {
-    process.stdout.write(ANSI.showCursor)
-    process.stdout.write(ANSI.clearScreen + ANSI.cursorHome)
+    cleanupTerminal()
     process.exit(0)
   }
   
@@ -360,10 +370,156 @@ function handleSessionViewKeypress(str: string, key: KeyEvent): void {
 }
 
 // ---------------------------------------------------------------------------
+// Mouse Event Parsing (SGR extended mode)
+// ---------------------------------------------------------------------------
+
+interface MouseEvent {
+  type: 'click' | 'release' | 'drag' | 'scroll-up' | 'scroll-down'
+  button: number  // 0=left, 1=middle, 2=right, 64=scroll-up, 65=scroll-down
+  x: number       // 1-based column
+  y: number       // 1-based row
+  shift: boolean
+  ctrl: boolean
+  meta: boolean
+}
+
+function parseMouseEvent(sequence: string): MouseEvent | null {
+  // SGR extended mouse format: \x1b[<button;x;yM or \x1b[<button;x;ym
+  // M = press, m = release
+  const match = sequence.match(/\x1b\[<(\d+);(\d+);(\d+)([Mm])/)
+  if (!match) return null
+  
+  const buttonCode = parseInt(match[1], 10)
+  const x = parseInt(match[2], 10)
+  const y = parseInt(match[3], 10)
+  const isPress = match[4] === 'M'
+  
+  // Decode button and modifiers
+  const button = buttonCode & 3  // bits 0-1 = button
+  const shift = (buttonCode & 4) !== 0
+  const meta = (buttonCode & 8) !== 0
+  const ctrl = (buttonCode & 16) !== 0
+  const motion = (buttonCode & 32) !== 0
+  const scrollUp = (buttonCode & 64) !== 0
+  const scrollDown = (buttonCode & 65) === 65
+  
+  let type: MouseEvent['type']
+  if (scrollUp && !scrollDown) {
+    type = 'scroll-up'
+  } else if (scrollDown) {
+    type = 'scroll-down'
+  } else if (motion) {
+    type = 'drag'
+  } else if (isPress) {
+    type = 'click'
+  } else {
+    type = 'release'
+  }
+  
+  return { type, button, x, y, shift, ctrl, meta }
+}
+
+// ---------------------------------------------------------------------------
+// Mouse Event Handlers
+// ---------------------------------------------------------------------------
+
+function handleMainMouseEvent(event: MouseEvent): void {
+  // Scroll wheel
+  if (event.type === 'scroll-up') {
+    if (selectedIndex > 0) {
+      setSelectedIndex(selectedIndex - 1)
+    } else if (selectedIndex === -1 && selectableItems.length > 0) {
+      setSelectedIndex(selectableItems.length - 1)
+    }
+    render()
+    return
+  }
+  
+  if (event.type === 'scroll-down') {
+    if (selectedIndex < selectableItems.length - 1) {
+      setSelectedIndex(selectedIndex + 1)
+    }
+    render()
+    return
+  }
+  
+  // Left click
+  if (event.type === 'click' && event.button === 0) {
+    // Header takes 3 lines, so content starts at row 4
+    const contentRow = event.y - 3
+    
+    if (contentRow >= 1 && contentRow <= selectableItems.length) {
+      const clickedIndex = contentRow - 1
+      
+      if (clickedIndex === selectedIndex) {
+        // Double-click effect: if same item, trigger action
+        const item = selectableItems[clickedIndex]
+        if (item.type === 'group' && item.key) {
+          if (collapsedGroups.has(item.key)) {
+            collapsedGroups.delete(item.key)
+          } else {
+            collapsedGroups.add(item.key)
+          }
+        } else if (item.type === 'instance' && item.instanceId) {
+          const inst = instances.get(item.instanceId)
+          if (inst) {
+            enterSessionView(inst)
+            return
+          }
+        }
+      } else {
+        // First click: select
+        setSelectedIndex(clickedIndex)
+      }
+      render()
+    }
+  }
+}
+
+function handleSessionViewMouseEvent(event: MouseEvent): void {
+  // Scroll wheel for message scrolling
+  if (event.type === 'scroll-up') {
+    scrollSessionView('up')
+    return
+  }
+  
+  if (event.type === 'scroll-down') {
+    scrollSessionView('down')
+    return
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Raw Data Handler (for mouse events)
+// ---------------------------------------------------------------------------
+
+function handleRawData(data: Buffer): void {
+  const str = data.toString()
+  
+  // Check for mouse event sequences
+  if (str.includes('\x1b[<')) {
+    const mouseEvent = parseMouseEvent(str)
+    if (mouseEvent) {
+      if (sessionViewActive) {
+        handleSessionViewMouseEvent(mouseEvent)
+      } else if (!detailView) {
+        handleMainMouseEvent(mouseEvent)
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
 
 export function setupKeyboardInput(): void {
+  // Enter alternate screen buffer (prevents scroll interference)
+  process.stdout.write(ANSI.enterAltScreen)
+  
+  // Enable mouse tracking
+  process.stdout.write(ANSI.enableMouse)
+  
   // Set up raw mode for keypress handling
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(true)
@@ -382,10 +538,10 @@ export function setupKeyboardInput(): void {
   // Initialize terminal size
   setTermSize(process.stdout.columns || 80, process.stdout.rows || 24)
   
-  // Hide cursor
-  process.stdout.write(ANSI.hideCursor)
+  // Handle raw data for mouse events (before keypress parsing)
+  process.stdin.on('data', handleRawData)
   
-  // Handle keypress events
+  // Handle keypress events (keyboard)
   process.stdin.on('keypress', (str: string | undefined, key: KeyEvent) => {
     if (!key) return
     
@@ -398,17 +554,16 @@ export function setupKeyboardInput(): void {
   
   /* v8 ignore start - process signal handlers */
   process.on('exit', () => {
-    process.stdout.write(ANSI.showCursor)
+    cleanupTerminal()
   })
   
   process.on('SIGINT', () => {
-    process.stdout.write(ANSI.showCursor)
-    process.stdout.write(ANSI.clearScreen + ANSI.cursorHome)
+    cleanupTerminal()
     process.exit(0)
   })
   
   process.on('SIGTERM', () => {
-    process.stdout.write(ANSI.showCursor)
+    cleanupTerminal()
     process.exit(0)
   })
   /* v8 ignore stop */
