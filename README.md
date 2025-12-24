@@ -19,9 +19,14 @@ npm run dev
 ## Plugin Installation
 
 ```bash
-# Copy plugin to OpenCode's plugin directory
-mkdir -p ~/.config/opencode/plugin
-cp opencode/plugin/oc-session-manager.js ~/.config/opencode/plugin/
+# Install the plugin (copy to ~/.config/opencode/plugin/)
+npm run install-plugin
+
+# Or use symlink (auto-updates when you rebuild)
+npm run link-plugin
+
+# Uninstall
+npm run uninstall-plugin
 
 # Set your desktop IP if running in a container
 export OC_SESSION_HOST=192.168.1.50
@@ -122,19 +127,6 @@ oc-session-manager --daemon     # Run as background daemon (notifications only)
 oc-session-manager --status     # Check if daemon is running
 oc-session-manager --stop       # Stop the daemon
 oc-session-manager --debug      # Show raw UDP packets
-```
-
-## Plugin Management
-
-```bash
-# Install plugin (copy)
-npm run install-plugin
-
-# Install plugin (symlink - auto-updates with source)
-npm run link-plugin
-
-# Remove plugin
-npm run uninstall-plugin
 ```
 
 ## Development
