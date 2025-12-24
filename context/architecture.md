@@ -241,40 +241,7 @@ src/
 ├── server.ts     # UDP socket, desktop notifications, session discovery
 ├── session.ts    # Session viewer, SSE subscription, actions
 ├── render.ts     # TUI rendering (grouped/flat/detail/session views)
-└── input.ts      # Keyboard and mouse handlers for all views
-```
-
-### Terminal Mode
-
-The TUI uses **alternate screen buffer** mode (like vim, less, htop):
-- Prevents terminal scroll interference from mouse/keyboard
-- Preserves terminal history when exiting
-- Enables proper mouse event capture
-
-**ANSI Sequences Used**:
-```
-Enter alternate screen: \x1b[?1049h
-Exit alternate screen:  \x1b[?1049l
-Enable mouse tracking:  \x1b[?1000h\x1b[?1002h\x1b[?1006h
-Disable mouse tracking: \x1b[?1006l\x1b[?1002l\x1b[?1000l
-```
-
-### Mouse Support
-
-Mouse events are captured using **SGR extended mode** for compatibility:
-
-| Action | Effect (Main View) | Effect (Session Viewer) |
-|--------|-------------------|------------------------|
-| Left click | Select row (click again to open) | - |
-| Scroll up | Move selection up | Scroll messages up |
-| Scroll down | Move selection down | Scroll messages down |
-
-**Mouse Event Parsing** (SGR format):
-```
-Format: \x1b[<button;x;y[Mm]
-- button: encoded button + modifiers
-- x, y: 1-based coordinates
-- M: press, m: release
+└── input.ts      # Keyboard handlers for all views
 ```
 
 ### Data Flow

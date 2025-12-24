@@ -53,15 +53,13 @@ When running multiple OpenCode sessions (especially in Docker containers), it's 
 | **Abort Sessions** | Stop busy sessions from the TUI |
 | **Quick Removal** | Press `d` to immediately remove stale/dead sessions |
 | **Dual View Modes** | Toggle between grouped and flat views with Tab |
-| **Mouse Support** | Click to select, scroll wheel to navigate, click again to open |
-| **Full Screen TUI** | Uses alternate screen buffer (no scroll interference) |
 
-## Keyboard & Mouse
+## Keyboard Shortcuts
 
 ### Main List
 
-| Input | Action |
-|-------|--------|
+| Key | Action |
+|-----|--------|
 | `q` | Quit |
 | `↑`/`↓` or `k`/`j` | Navigate/select rows |
 | `Enter` | Expand/collapse group, or open session viewer |
@@ -72,13 +70,11 @@ When running multiple OpenCode sessions (especially in Docker containers), it's 
 | `Tab` | Toggle grouped/flat view |
 | `c` | Clear all stale instances |
 | `r` | Force refresh |
-| **Mouse click** | Select row (click again to open) |
-| **Scroll wheel** | Navigate up/down |
 
 ### Session Viewer
 
-| Input | Action |
-|-------|--------|
+| Key | Action |
+|-----|--------|
 | `Esc` / `q` | Return to main list |
 | `↑`/`↓` | Scroll messages |
 | `Ctrl+←/→` | Switch between parent/child sessions |
@@ -86,7 +82,6 @@ When running multiple OpenCode sessions (especially in Docker containers), it's 
 | `m` | Send a message to the session |
 | `a`/`A` | Allow permission (once / always) |
 | `d`/`D` | Deny permission (once / always) |
-| **Scroll wheel** | Scroll messages |
 
 ## Environment Variables
 

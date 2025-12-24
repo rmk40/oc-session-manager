@@ -1210,7 +1210,7 @@ describe('input', () => {
       expect(mockStdout.on).toHaveBeenCalledWith('resize', expect.any(Function))
     })
 
-    it('enters alternate screen and enables mouse on setup', async () => {
+    it('hides cursor on setup', async () => {
       const { setupKeyboardInput } = await import('./input.js')
       
       Object.defineProperty(process, 'stdin', { value: mockStdin, configurable: true })
@@ -1218,8 +1218,7 @@ describe('input', () => {
 
       setupKeyboardInput()
 
-      expect(mockStdout.write).toHaveBeenCalledWith('\x1b[?1049h') // enterAltScreen
-      expect(mockStdout.write).toHaveBeenCalledWith('\x1b[?1000h\x1b[?1002h\x1b[?1006h') // enableMouse
+      expect(mockStdout.write).toHaveBeenCalledWith('\x1b[?25l') // hideCursor
     })
 
     it('initializes terminal size', async () => {
@@ -1481,19 +1480,6 @@ describe('input', () => {
       // Should scroll, not navigate main view
       expect(scrollSessionView).toHaveBeenCalledWith('down')
       expect(state.selectedIndex).toBe(0) // Main view selection unchanged
-    })
-  })
-
-  describe('mouse support setup', () => {
-    it('registers data handler for mouse events', async () => {
-      const { setupKeyboardInput } = await import('./input.js')
-      
-      Object.defineProperty(process, 'stdin', { value: mockStdin, configurable: true })
-      Object.defineProperty(process, 'stdout', { value: mockStdout, configurable: true })
-
-      setupKeyboardInput()
-
-      expect(mockStdin.on).toHaveBeenCalledWith('data', expect.any(Function))
     })
   })
 })
