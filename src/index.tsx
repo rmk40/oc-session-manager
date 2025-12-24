@@ -19,7 +19,7 @@
 import React from "react";
 import { render } from "ink";
 import { App, AppProvider } from "./components/index.js";
-import { PORT } from "./config.js";
+import { PORT, DEBUG_FLAGS } from "./config.js";
 import {
   checkDaemon,
   handleDaemon,
@@ -40,20 +40,12 @@ import { initSdk } from "./sdk.js";
 
 const args = process.argv.slice(2);
 
-const isDebug = args.includes("--debug");
-const isDebugSse = args.includes("--debug-sse");
-const isDebugState = args.includes("--debug-state");
 const isDaemon = args.includes("--daemon");
 const isStatus = args.includes("--status");
 const isStop = args.includes("--stop");
 const isDaemonChildProcess = isDaemonChild();
 
-// Export debug flags for use by other modules
-export const DEBUG_FLAGS = {
-  sse: isDebugSse,
-  state: isDebugState,
-  udp: isDebug,
-};
+// DEBUG_FLAGS imported from config.ts (parsed from CLI args)
 
 // ---------------------------------------------------------------------------
 // UDP Server with Ink Integration
@@ -208,7 +200,7 @@ async function main(): Promise<void> {
   await initSdk();
 
   // Debug mode - just show raw packets
-  if (isDebug) {
+  if (DEBUG_FLAGS.udp) {
     console.log("Debug mode: showing raw UDP packets");
     const socket = createSocket({ type: "udp4", reuseAddr: true });
     socket.on("message", (msg, rinfo) => {
