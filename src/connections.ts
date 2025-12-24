@@ -699,3 +699,80 @@ export function disposeConnectionManager(): void {
     connectionManager = null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// React Hook
+// ---------------------------------------------------------------------------
+
+import { useState, useEffect, useCallback, useRef } from "react";
+
+export interface ConnectionState {
+  servers: Server[];
+  sessions: Session[];
+}
+
+/**
+ * React hook for using the ConnectionManager
+ *
+ * Provides reactive state that updates when servers/sessions change.
+ * Manages lifecycle (cleanup on unmount).
+ */
+export function useConnectionManager(): {
+  state: ConnectionState;
+  manager: ConnectionManager;
+  handleAnnounce: (packet: AnnouncePacket) => void;
+  handleShutdown: (packet: ShutdownPacket) => void;
+} {
+  const managerRef = useRef<ConnectionManager | null>(null);
+  const [state, setState] = useState<ConnectionState>({
+    servers: [],
+    sessions: [],
+  });
+
+  // Initialize manager on mount
+  useEffect(() => {
+    const manager = getConnectionManager();
+    managerRef.current = manager;
+
+    // Update state when sessions change
+    const updateState = () => {
+      setState({
+        servers: manager.getServers(),
+        sessions: manager.getSessions(),
+      });
+    };
+
+    // Subscribe to updates
+    manager.onSessionsUpdate(() => {
+      updateState();
+    });
+
+    manager.onConnectionChange(() => {
+      updateState();
+    });
+
+    // Initial state
+    updateState();
+
+    // Cleanup on unmount
+    return () => {
+      disposeConnectionManager();
+      managerRef.current = null;
+    };
+  }, []);
+
+  const handleAnnounce = useCallback((packet: AnnouncePacket) => {
+    managerRef.current?.handleAnnounce(packet);
+  }, []);
+
+  const handleShutdown = useCallback((packet: ShutdownPacket) => {
+    managerRef.current?.handleShutdown(packet);
+  }, []);
+
+  return {
+    state,
+    manager: managerRef.current || getConnectionManager(),
+    handleAnnounce,
+    handleShutdown,
+  };
+}

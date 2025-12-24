@@ -55,6 +55,8 @@ function startUdpServer(
   setInstance: (id: string, instance: Instance) => void,
   removeInstance: (id: string) => void,
   options: { debug?: boolean } = {},
+  onAnnounce?: (packet: AnnouncePacket) => void,
+  onShutdown?: (packet: ShutdownPacket) => void,
 ): Socket {
   const isDebugMode = options.debug || false;
   const daemon = isDaemonChildProcess;
@@ -73,31 +75,36 @@ function startUdpServer(
 
       // Handle new oc.announce format (server discovery only)
       if (data.type === "oc.announce" && data.serverUrl) {
-        // For now, create a placeholder instance from announce
-        // This will be replaced by proper SDK-based state in Phase 3
-        const instanceKey = data.instanceId;
-
         if (DEBUG_FLAGS.udp) {
           console.error(
-            `[UDP] Announce from ${instanceKey}: ${data.serverUrl}`,
+            `[UDP] Announce from ${data.instanceId}: ${data.serverUrl}`,
           );
         }
 
-        setInstance(instanceKey, {
-          instanceId: instanceKey,
-          status: "idle", // Will be fetched from SDK
-          project: data.project,
-          directory: data.directory,
-          dirName: data.project,
-          branch: data.branch,
-          serverUrl: data.serverUrl,
-          ts: data.ts || Date.now(),
-        } as Instance);
+        // Route to ConnectionManager if available
+        if (onAnnounce) {
+          onAnnounce(data as unknown as AnnouncePacket);
+        } else {
+          // Fallback: create placeholder instance (legacy behavior)
+          setInstance(data.instanceId, {
+            instanceId: data.instanceId,
+            status: "idle",
+            project: data.project,
+            directory: data.directory,
+            dirName: data.project,
+            branch: data.branch,
+            serverUrl: data.serverUrl,
+            ts: data.ts || Date.now(),
+          } as Instance);
+        }
         return;
       }
 
       // Handle oc.shutdown
       if (data.type === "oc.shutdown" && data.instanceId) {
+        if (onShutdown) {
+          onShutdown(data as unknown as ShutdownPacket);
+        }
         removeInstance(data.instanceId);
         return;
       }
@@ -158,19 +165,69 @@ function startUdpServer(
 // ---------------------------------------------------------------------------
 
 import { useAppActions } from "./components/index.js";
+import {
+  useConnectionManager,
+  type AnnouncePacket,
+  type ShutdownPacket,
+} from "./connections.js";
 
 function AppWithUdp(): React.ReactElement {
-  const { setInstance, removeInstance } = useAppActions();
+  const { setInstance, removeInstance, updateServers, updateSessions } =
+    useAppActions();
+  const { handleAnnounce, handleShutdown, state } = useConnectionManager();
+
+  // Sync ConnectionManager state to AppContext
+  React.useEffect(() => {
+    updateServers(state.servers);
+    updateSessions(state.sessions);
+  }, [state.servers, state.sessions, updateServers, updateSessions]);
+
+  // Bridge ConnectionManager sessions to legacy instance state
+  // This allows existing UI components to work during the transition
+  React.useEffect(() => {
+    for (const session of state.sessions) {
+      // Find the server for this session
+      const server = state.servers.find(
+        (s) => s.serverUrl === session.serverUrl,
+      );
+      if (!server) continue;
+
+      // Create a legacy-compatible instance
+      setInstance(session.id, {
+        instanceId: session.id,
+        sessionID: session.id,
+        parentID: session.parentID,
+        status: session.status === "running" ? "busy" : session.status,
+        project: server.project,
+        directory: session.directory || server.directory,
+        dirName: server.project,
+        branch: server.branch,
+        serverUrl: server.serverUrl,
+        title: session.title,
+        ts: Date.now(),
+        cost: session.cost,
+        tokens: session.tokens,
+        model: session.model,
+        _isChildSession: !!session.parentID,
+      } as Instance);
+    }
+  }, [state.sessions, state.servers, setInstance]);
 
   // Start UDP server on mount
   // setInstance and removeInstance are stable (from useAppActions)
   React.useEffect(() => {
-    const socket = startUdpServer(setInstance, removeInstance);
+    const socket = startUdpServer(
+      setInstance,
+      removeInstance,
+      {},
+      handleAnnounce,
+      handleShutdown,
+    );
 
     return () => {
       socket.close();
     };
-  }, [setInstance, removeInstance]);
+  }, [setInstance, removeInstance, handleAnnounce, handleShutdown]);
 
   return <App />;
 }
