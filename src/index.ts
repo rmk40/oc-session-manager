@@ -14,7 +14,7 @@
 //   OC_SESSION_TIMEOUT     - Seconds before instance considered stale (default: 120)
 //   OC_SESSION_LONG_RUNNING - Minutes before busy instance flagged as long-running (default: 10)
 
-import { REFRESH_INTERVAL } from './config.js'
+import { REFRESH_INTERVAL, ANSI } from './config.js'
 import { 
   checkDaemon, 
   handleDaemon, 
@@ -79,6 +79,9 @@ async function main(): Promise<void> {
   
   // Normal TUI mode
   checkDaemon()
+  
+  // Hide cursor immediately
+  process.stdout.write(ANSI.hideCursor)
   
   // Start UDP server
   startServer()
