@@ -264,7 +264,9 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
   const setSessionViewError = useCallback((error: string | null) => setSessionViewErrorInternal(error), [])
   const setSessionViewConnecting = useCallback((connecting: boolean) => setSessionViewConnectingInternal(connecting), [])
   const setSessionViewStatus = useCallback((status: string) => setSessionViewStatusInternal(status), [])
-  const setSessionViewMessages = useCallback((messages: Message[]) => setSessionViewMessagesInternal(messages), [])
+  const setSessionViewMessages = useCallback((messages: Message[]) => {
+      setSessionViewMessagesInternal(messages)
+  }, [])
   const setSessionViewRenderedLines = useCallback((lines: RenderedLine[]) => setSessionViewRenderedLinesInternal(lines), [])
   const setSessionViewSessions = useCallback((sessions: any[]) => setSessionViewSessionsInternal(sessions), [])
   const setSessionViewSessionIndex = useCallback((idx: number) => setSessionViewSessionIndexInternal(idx), [])

@@ -5,7 +5,7 @@ import { Box, Text, Spacer } from 'ink'
 import { useAppState, useViewState } from './AppContext.js'
 
 export const SessionView = React.memo((): React.ReactElement => {
-  const { sessionViewInstance, sessionViewSessionID, sessionViewStatus, sessionViewSessions, sessionViewSessionIndex, sessionViewSessionTitle, sessionViewConnecting, sessionViewError, sessionViewConfirmAbort, sessionViewInputMode, sessionViewPendingPermissions, sessionViewRenderedLines, terminalSize } = useViewState()
+  const { sessionViewInstance, sessionViewSessionID, sessionViewStatus, sessionViewSessions, sessionViewSessionIndex, sessionViewSessionTitle, sessionViewConnecting, sessionViewError, sessionViewConfirmAbort, sessionViewInputMode, sessionViewPendingPermissions, terminalSize } = useViewState()
   
   const width = terminalSize.columns
   const inst = sessionViewInstance
@@ -107,17 +107,37 @@ export const SessionView = React.memo((): React.ReactElement => {
       
       {/* Help bar at bottom */}
       <Box borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false} marginTop={1}>
-        <Text dimColor>
-          <Text>[Esc] back  [↑↓] scroll</Text>
-          {hasMultipleSessions ? <Text>  [Ctrl+←/→] switch session</Text> : null}
-          {(status === 'busy' || status === 'running' || status === 'pending') ? <Text>  [a]bort</Text> : null}
-          {sessionViewPendingPermissions.size > 0 ? <Text>  [p]ermissions</Text> : null}
-          <Text>  [m]essage</Text>
-        </Text>
+        <Box flexGrow={1}>
+            <Text dimColor>
+            <Text>[Esc] back  [↑↓/PgUp/PgDn] scroll</Text>
+            {hasMultipleSessions ? <Text>  [Ctrl+←/→] switch session</Text> : null}
+            {(status === 'busy' || status === 'running' || status === 'pending') ? <Text>  [a]bort</Text> : null}
+            {sessionViewPendingPermissions.size > 0 ? <Text>  [p]ermissions</Text> : null}
+            <Text>  [m]essage</Text>
+            </Text>
+        </Box>
+        <ScrollIndicator />
       </Box>
     </Box>
   )
 })
+
+function ScrollIndicator(): React.ReactElement | null {
+    const { sessionViewRenderedLines, sessionViewScrollOffset, terminalSize, sessionViewSessions } = useViewState()
+    const hasMultipleSessions = sessionViewSessions.length > 1
+    const viewHeight = terminalSize.rows - (hasMultipleSessions ? 12 : 10)
+    const totalLines = sessionViewRenderedLines.length
+
+    if (totalLines <= viewHeight) return null
+
+    if (sessionViewScrollOffset === 0) {
+        return <Text color="green"> BOTTOM </Text>
+    }
+
+    const maxScroll = Math.max(0, totalLines - viewHeight)
+    const percent = Math.round((Math.min(sessionViewScrollOffset, maxScroll) / maxScroll) * 100)
+    return <Text color="yellow"> SCROLL: {percent}% </Text>
+}
 
 function CenteredMessage({ message, color }: { message: string; color?: string }): React.ReactElement {
   return (
@@ -173,11 +193,23 @@ function PermissionPrompt(): React.ReactElement {
 }
 
 function MessageContent(): React.ReactElement {
-  const { sessionViewRenderedLines } = useViewState()
+  const { sessionViewRenderedLines, sessionViewScrollOffset, terminalSize, sessionViewSessions } = useViewState()
   if (sessionViewRenderedLines.length === 0) return <CenteredMessage message="No messages yet" />
+
+  const hasMultipleSessions = sessionViewSessions.length > 1
+  const viewHeight = terminalSize.rows - (hasMultipleSessions ? 12 : 10)
+  
+  const totalLines = sessionViewRenderedLines.length
+  const maxScroll = Math.max(0, totalLines - viewHeight)
+  const effectiveOffset = Math.min(sessionViewScrollOffset, maxScroll)
+
+  const end = totalLines - effectiveOffset
+  const start = Math.max(0, end - viewHeight)
+  const visibleLines = sessionViewRenderedLines.slice(start, end)
+
   return (
     <Box flexDirection="column" overflow="hidden">
-      {sessionViewRenderedLines.map((line, idx) => (
+      {visibleLines.map((line, idx) => (
         <Text key={`line-${idx}`}>{line.text || line.plain}</Text>
       ))}
     </Box>

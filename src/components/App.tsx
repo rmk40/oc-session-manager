@@ -19,7 +19,7 @@ export function App(): React.ReactElement {
   const { exit } = useInkApp()
   const { stdout } = useStdout()
   const { instances } = useAppState()
-  const { viewMode, selectedIndex, collapsedGroups, detailView, sessionViewActive, terminalSize } = useViewState()
+  const { viewMode, selectedIndex, collapsedGroups, detailView, sessionViewActive, sessionViewScrollOffset, terminalSize } = useViewState()
   const actions = useAppActions()
   const { getEffectiveStatus } = useStatusHelpers()
   
@@ -59,6 +59,25 @@ export function App(): React.ReactElement {
         if (key.escape) {
             actions.exitSessionView()
             actions.setSelectedIndex(-1)
+            return
+        }
+
+        // Scrolling in session view
+        if (key.upArrow) {
+            actions.setSessionViewScrollOffset(sessionViewScrollOffset + 1)
+            return
+        }
+        if (key.downArrow) {
+            actions.setSessionViewScrollOffset(Math.max(0, sessionViewScrollOffset - 1))
+            return
+        }
+        if (key.pageUp) {
+            actions.setSessionViewScrollOffset(sessionViewScrollOffset + 15)
+            return
+        }
+        if (key.pageDown) {
+            actions.setSessionViewScrollOffset(Math.max(0, sessionViewScrollOffset - 15))
+            return
         }
         return
     }
@@ -80,6 +99,16 @@ export function App(): React.ReactElement {
     if (key.downArrow || input === 'j') {
       if (selectedIndex < itemCount - 1) actions.setSelectedIndex(selectedIndex + 1)
       return
+    }
+
+    if (key.pageUp) {
+        actions.setSelectedIndex(Math.max(0, selectedIndex - 10))
+        return
+    }
+
+    if (key.pageDown) {
+        actions.setSelectedIndex(Math.min(itemCount - 1, selectedIndex + 10))
+        return
     }
     
     if (key.tab) {
