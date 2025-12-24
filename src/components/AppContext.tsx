@@ -121,21 +121,33 @@ export function useStatusHelpers() {
   return { getEffectiveStatus, isLongRunning, getBusyDuration }
 }
 
+// Legacy hook for compatibility
+export function useApp(): { state: AppState & ViewState & { currentTime: number }; actions: AppActions } {
+  const appState = useAppState()
+  const viewState = useViewState()
+  const actions = useAppActions()
+  const currentTime = useTime()
+  return { state: { ...appState, ...viewState, currentTime }, actions }
+}
+
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
 
 export function AppProvider({ children }: { children: ReactNode }): React.ReactElement {
+  // Instance tracking
   const [instances, setInstances] = useState<Map<string, Instance>>(new Map())
   const [busySince, setBusySince] = useState<Map<string, number>>(new Map())
   const [idleSince, setIdleSince] = useState<Map<string, number>>(new Map())
   const [currentTime, setCurrentTime] = useState<number>(Date.now())
   
+  // View state
   const [viewMode, setViewModeInternal] = useState<ViewMode>('grouped')
   const [selectedIndex, setSelectedIndexInternal] = useState(-1)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [detailView, setDetailViewInternal] = useState<string | null>(null)
   
+  // Session viewer state
   const [sessionViewActive, setSessionViewActive] = useState(false)
   const [sessionViewInstance, setSessionViewInstance] = useState<Instance | null>(null)
   const [sessionViewSessionID, setSessionViewSessionID] = useState<string | null>(null)
@@ -267,15 +279,31 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
   const appState = useMemo<AppState>(() => ({ instances, busySince, idleSince }), [instances, busySince, idleSince])
 
   const viewState = useMemo<ViewState>(() => ({
-    viewMode, selectedIndex, collapsedGroups, detailView, sessionViewActive, sessionViewInstance, sessionViewSessionID,
-    sessionViewMessages, sessionViewScrollOffset, sessionViewRenderedLines, sessionViewPendingPermissions,
-    sessionViewInputMode, sessionViewInputBuffer, sessionViewConfirmAbort, sessionViewError, sessionViewConnecting,
-    sessionViewStatus, sessionViewSessions, sessionViewSessionIndex, sessionViewSessionTitle
+    viewMode, 
+    selectedIndex, 
+    collapsedGroups, 
+    detailView, 
+    sessionViewActive, 
+    sessionViewInstance, 
+    sessionViewSessionID,
+    sessionViewMessages: sessionViewMessagesInternal, 
+    sessionViewScrollOffset: sessionViewScrollOffsetInternal, 
+    sessionViewRenderedLines: sessionViewRenderedLinesInternal, 
+    sessionViewPendingPermissions,
+    sessionViewInputMode: sessionViewInputModeInternal, 
+    sessionViewInputBuffer: sessionViewInputBufferInternal, 
+    sessionViewConfirmAbort: sessionViewConfirmAbortInternal, 
+    sessionViewError: sessionViewErrorInternal, 
+    sessionViewConnecting: sessionViewConnectingInternal,
+    sessionViewStatus: sessionViewStatusInternal, 
+    sessionViewSessions: sessionViewSessionsInternal, 
+    sessionViewSessionIndex: sessionViewSessionIndexInternal, 
+    sessionViewSessionTitle: sessionViewSessionTitleInternal
   }), [
     viewMode, selectedIndex, collapsedGroups, detailView, sessionViewActive, sessionViewInstance, sessionViewSessionID,
-    sessionViewMessages, sessionViewScrollOffset, sessionViewRenderedLines, sessionViewPendingPermissions,
-    sessionViewInputMode, sessionViewInputBuffer, sessionViewConfirmAbort, sessionViewError, sessionViewConnecting,
-    sessionViewStatus, sessionViewSessions, sessionViewSessionIndex, sessionViewSessionTitle
+    sessionViewMessagesInternal, sessionViewScrollOffsetInternal, sessionViewRenderedLinesInternal, sessionViewPendingPermissions,
+    sessionViewInputModeInternal, sessionViewInputBufferInternal, sessionViewConfirmAbortInternal, sessionViewErrorInternal, sessionViewConnectingInternal,
+    sessionViewStatusInternal, sessionViewSessionsInternal, sessionViewSessionIndexInternal, sessionViewSessionTitleInternal
   ])
 
   return (
