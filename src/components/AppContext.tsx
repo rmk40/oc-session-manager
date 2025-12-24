@@ -286,24 +286,24 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
     sessionViewActive, 
     sessionViewInstance, 
     sessionViewSessionID,
-    sessionViewMessages: sessionViewMessagesInternal, 
-    sessionViewScrollOffset: sessionViewScrollOffsetInternal, 
-    sessionViewRenderedLines: sessionViewRenderedLinesInternal, 
+    sessionViewMessages, 
+    sessionViewScrollOffset, 
+    sessionViewRenderedLines, 
     sessionViewPendingPermissions,
-    sessionViewInputMode: sessionViewInputModeInternal, 
-    sessionViewInputBuffer: sessionViewInputBufferInternal, 
-    sessionViewConfirmAbort: sessionViewConfirmAbortInternal, 
-    sessionViewError: sessionViewErrorInternal, 
-    sessionViewConnecting: sessionViewConnectingInternal,
-    sessionViewStatus: sessionViewStatusInternal, 
-    sessionViewSessions: sessionViewSessionsInternal, 
-    sessionViewSessionIndex: sessionViewSessionIndexInternal, 
-    sessionViewSessionTitle: sessionViewSessionTitleInternal
+    sessionViewInputMode, 
+    sessionViewInputBuffer, 
+    sessionViewConfirmAbort, 
+    sessionViewError, 
+    sessionViewConnecting,
+    sessionViewStatus, 
+    sessionViewSessions, 
+    sessionViewSessionIndex, 
+    sessionViewSessionTitle
   }), [
     viewMode, selectedIndex, collapsedGroups, detailView, sessionViewActive, sessionViewInstance, sessionViewSessionID,
-    sessionViewMessagesInternal, sessionViewScrollOffsetInternal, sessionViewRenderedLinesInternal, sessionViewPendingPermissions,
-    sessionViewInputModeInternal, sessionViewInputBufferInternal, sessionViewConfirmAbortInternal, sessionViewErrorInternal, sessionViewConnectingInternal,
-    sessionViewStatusInternal, sessionViewSessionsInternal, sessionViewSessionIndexInternal, sessionViewSessionTitleInternal
+    sessionViewMessages, sessionViewScrollOffset, sessionViewRenderedLines, sessionViewPendingPermissions,
+    sessionViewInputMode, sessionViewInputBuffer, sessionViewConfirmAbort, sessionViewError, sessionViewConnecting,
+    sessionViewStatus, sessionViewSessions, sessionViewSessionIndex, sessionViewSessionTitle
   ])
 
   return (
