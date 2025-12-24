@@ -12,8 +12,6 @@ export const HelpBar = React.memo((): React.ReactElement => {
   return (
     <Box 
       paddingX={1} 
-      borderStyle="round" 
-      borderColor="cyan"
       marginTop={1}
     >
       <Text dimColor>

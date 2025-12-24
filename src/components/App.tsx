@@ -9,7 +9,6 @@ import { FlatView } from './FlatView.js'
 import { DetailView } from './DetailView.js'
 import { SessionView } from './SessionView.js'
 import { HelpBar } from './HelpBar.js'
-import type { Instance } from '../types.js'
 
 // Spinner context to share frame across components
 export const SpinnerContext = React.createContext(0)
@@ -23,12 +22,24 @@ export function App(): React.ReactElement {
   const { getEffectiveStatus } = useStatusHelpers()
   
   const [spinnerFrame, setSpinnerFrame] = useState(0)
+  const [terminalSize, setTerminalSize] = useState({
+    columns: stdout?.columns || 80,
+    rows: stdout?.rows || 24
+  })
+
+  useEffect(() => {
+    const handleResize = () => {
+      setTerminalSize({
+        columns: process.stdout.columns || 80,
+        rows: process.stdout.rows || 24
+      })
+    }
+    process.stdout.on('resize', handleResize)
+    return () => {
+      process.stdout.off('resize', handleResize)
+    }
+  }, [])
   
-  // Get terminal dimensions
-  const termWidth = stdout?.columns || 80
-  const termHeight = stdout?.rows || 24
-  
-  // Check if any instance is busy (for spinner animation)
   const hasBusyInstances = useMemo(() => {
     for (const inst of instances.values()) {
       if (getEffectiveStatus(inst) === 'busy') return true
@@ -36,7 +47,6 @@ export function App(): React.ReactElement {
     return false
   }, [instances, getEffectiveStatus])
   
-  // Main animation loop - updates currentTime
   useEffect(() => {
     const interval = setInterval(() => {
       actions.tick()
@@ -44,7 +54,6 @@ export function App(): React.ReactElement {
     return () => clearInterval(interval)
   }, [actions.tick])
   
-  // Spinner update
   useEffect(() => {
     if (!hasBusyInstances) return
     const interval = setInterval(() => {
@@ -53,7 +62,6 @@ export function App(): React.ReactElement {
     return () => clearInterval(interval)
   }, [hasBusyInstances])
   
-  // Handle keyboard input
   useInput((input, key) => {
     if (sessionViewActive) return
     if (detailView) {

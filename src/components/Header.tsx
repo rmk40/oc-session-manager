@@ -26,8 +26,6 @@ export const Header = React.memo((): React.ReactElement => {
     <Box 
       flexDirection="column" 
       paddingX={1}
-      borderStyle="round"
-      borderColor="cyan"
       marginBottom={1}
     >
       <Box>
