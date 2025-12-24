@@ -731,7 +731,7 @@ function renderFlat(): string {
 // ---------------------------------------------------------------------------
 
 export function render(): void {
-  let output = ANSI.clearScreen + ANSI.cursorHome
+  let output = ANSI.clearScreen + ANSI.cursorHome + ANSI.hideCursor
   
   if (sessionViewActive) {
     output += renderSessionView()
