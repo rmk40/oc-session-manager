@@ -12,7 +12,9 @@ export interface AppState {
   instances: Map<string, Instance>
   busySince: Map<string, number>
   idleSince: Map<string, number>
-  currentTime: number
+}
+
+export interface ViewState {
   viewMode: ViewMode
   selectedIndex: number
   collapsedGroups: Set<string>
@@ -67,11 +69,19 @@ export interface AppActions {
 // ---------------------------------------------------------------------------
 
 const AppStateContext = createContext<AppState | null>(null)
+const ViewStateContext = createContext<ViewState | null>(null)
 const AppActionsContext = createContext<AppActions | null>(null)
+const TimeContext = createContext<number>(Date.now())
 
 export function useAppState(): AppState {
   const context = useContext(AppStateContext)
   if (!context) throw new Error('useAppState must be used within AppProvider')
+  return context
+}
+
+export function useViewState(): ViewState {
+  const context = useContext(ViewStateContext)
+  if (!context) throw new Error('useViewState must be used within AppProvider')
   return context
 }
 
@@ -81,11 +91,16 @@ export function useAppActions(): AppActions {
   return context
 }
 
+export function useTime(): number {
+  return useContext(TimeContext)
+}
+
 /**
- * Status helpers that pull from the current state
+ * Status helpers that pull from the current state and time
  */
 export function useStatusHelpers() {
-  const { currentTime, busySince } = useAppState()
+  const { busySince } = useAppState()
+  const currentTime = useTime()
   
   const getEffectiveStatus = useCallback((instance: Instance): 'idle' | 'busy' | 'stale' => {
     const age = currentTime - instance.ts
@@ -110,10 +125,12 @@ export function useStatusHelpers() {
 }
 
 // Legacy hook for compatibility
-export function useApp(): { state: AppState; actions: AppActions } {
-  const state = useAppState()
+export function useApp(): { state: AppState & ViewState & { currentTime: number }; actions: AppActions } {
+  const appState = useAppState()
+  const viewState = useViewState()
   const actions = useAppActions()
-  return { state, actions }
+  const currentTime = useTime()
+  return { state: { ...appState, ...viewState, currentTime }, actions }
 }
 
 // ---------------------------------------------------------------------------
@@ -121,14 +138,19 @@ export function useApp(): { state: AppState; actions: AppActions } {
 // ---------------------------------------------------------------------------
 
 export function AppProvider({ children }: { children: ReactNode }): React.ReactElement {
+  // Instance tracking
   const [instances, setInstances] = useState<Map<string, Instance>>(new Map())
   const [busySince, setBusySince] = useState<Map<string, number>>(new Map())
   const [idleSince, setIdleSince] = useState<Map<string, number>>(new Map())
   const [currentTime, setCurrentTime] = useState<number>(Date.now())
+  
+  // View state
   const [viewMode, setViewModeInternal] = useState<ViewMode>('grouped')
   const [selectedIndex, setSelectedIndexInternal] = useState(-1)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [detailView, setDetailViewInternal] = useState<string | null>(null)
+  
+  // Session viewer state
   const [sessionViewActive, setSessionViewActive] = useState(false)
   const [sessionViewInstance, setSessionViewInstance] = useState<Instance | null>(null)
   const [sessionViewSessionID, setSessionViewSessionID] = useState<string | null>(null)
@@ -146,7 +168,7 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
   const [sessionViewSessionIndex, setSessionViewSessionIndexInternal] = useState(0)
   const [sessionViewSessionTitle, setSessionViewSessionTitleInternal] = useState('')
 
-  // 1. STABLE ACTIONS (No dependencies)
+  // 1. STABLE ACTIONS
   
   const tick = useCallback((now?: number) => setCurrentTime(now || Date.now()), [])
   const setInstance = useCallback((id: string, instance: Instance) => {
@@ -232,24 +254,28 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
     addPermission, removePermission, tick
   ])
 
-  const state = useMemo<AppState>(() => ({
-    instances, busySince, idleSince, currentTime, viewMode, selectedIndex, collapsedGroups, detailView,
-    sessionViewActive, sessionViewInstance, sessionViewSessionID, sessionViewMessages, sessionViewScrollOffset,
-    sessionViewRenderedLines, sessionViewPendingPermissions, sessionViewInputMode, sessionViewInputBuffer,
-    sessionViewConfirmAbort, sessionViewError, sessionViewConnecting, sessionViewStatus, sessionViewSessions,
-    sessionViewSessionIndex, sessionViewSessionTitle
+  const appState = useMemo<AppState>(() => ({ instances, busySince, idleSince }), [instances, busySince, idleSince])
+
+  const viewState = useMemo<ViewState>(() => ({
+    viewMode, selectedIndex, collapsedGroups, detailView, sessionViewActive, sessionViewInstance, sessionViewSessionID,
+    sessionViewMessages, sessionViewScrollOffset, sessionViewRenderedLines, sessionViewPendingPermissions,
+    sessionViewInputMode, sessionViewInputBuffer, sessionViewConfirmAbort, sessionViewError, sessionViewConnecting,
+    sessionViewStatus, sessionViewSessions, sessionViewSessionIndex, sessionViewSessionTitle
   }), [
-    instances, busySince, idleSince, currentTime, viewMode, selectedIndex, collapsedGroups, detailView,
-    sessionViewActive, sessionViewInstance, sessionViewSessionID, sessionViewMessages, sessionViewScrollOffset,
-    sessionViewRenderedLines, sessionViewPendingPermissions, sessionViewInputMode, sessionViewInputBuffer,
-    sessionViewConfirmAbort, sessionViewError, sessionViewConnecting, sessionViewStatus, sessionViewSessions,
-    sessionViewSessionIndex, sessionViewSessionTitle
+    viewMode, selectedIndex, collapsedGroups, detailView, sessionViewActive, sessionViewInstance, sessionViewSessionID,
+    sessionViewMessages, sessionViewScrollOffset, sessionViewRenderedLines, sessionViewPendingPermissions,
+    sessionViewInputMode, sessionViewInputBuffer, sessionViewConfirmAbort, sessionViewError, sessionViewConnecting,
+    sessionViewStatus, sessionViewSessions, sessionViewSessionIndex, sessionViewSessionTitle
   ])
 
   return (
     <AppActionsContext.Provider value={actions}>
-      <AppStateContext.Provider value={state}>
-        {children}
+      <AppStateContext.Provider value={appState}>
+        <ViewStateContext.Provider value={viewState}>
+          <TimeContext.Provider value={currentTime}>
+            {children}
+          </TimeContext.Provider>
+        </ViewStateContext.Provider>
       </AppStateContext.Provider>
     </AppActionsContext.Provider>
   )

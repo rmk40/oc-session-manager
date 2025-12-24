@@ -2,10 +2,11 @@
 
 import React from 'react'
 import { Box, Text } from 'ink'
-import { useAppState, useStatusHelpers } from './AppContext.js'
+import { useAppState, useViewState, useStatusHelpers } from './AppContext.js'
 
 export const Header = React.memo((): React.ReactElement => {
-  const { instances, viewMode } = useAppState()
+  const { instances } = useAppState()
+  const { viewMode } = useViewState()
   const { getEffectiveStatus } = useStatusHelpers()
   
   // Count instances by status

@@ -2,10 +2,10 @@
 
 import React from 'react'
 import { Box, Text } from 'ink'
-import { useAppState } from './AppContext.js'
+import { useViewState } from './AppContext.js'
 
 export const HelpBar = React.memo((): React.ReactElement => {
-  const { viewMode } = useAppState()
+  const { viewMode } = useViewState()
   
   const viewToggle = viewMode === 'grouped' ? 'flat' : 'grouped'
   

@@ -1,15 +1,15 @@
 // Grouped view - instances organized by project:branch
 
-import React, { useContext, useMemo } from 'react'
+import React, { useMemo } from 'react'
 import { Box, Text } from 'ink'
-import { useAppState, useStatusHelpers } from './AppContext.js'
-import { SpinnerContext } from './App.js'
+import { useAppState, useViewState, useStatusHelpers } from './AppContext.js'
 import { InstanceRow } from './InstanceRow.js'
 import type { Instance } from '../types.js'
 
 export const GroupedView = React.memo((): React.ReactElement => {
-  const { instances, selectedIndex, collapsedGroups, currentTime } = useAppState()
-  const { getEffectiveStatus, isLongRunning, getBusyDuration } = useStatusHelpers()
+  const { instances } = useAppState()
+  const { selectedIndex, collapsedGroups } = useViewState()
+  const { getEffectiveStatus } = useStatusHelpers()
   
   const groups = useMemo(() => {
     const sorted = Array.from(instances.values()).sort((a, b) => (a.instanceId || '').localeCompare(b.instanceId || ''))
@@ -91,21 +91,11 @@ export const GroupedView = React.memo((): React.ReactElement => {
             {!isCollapsed && groupInstances.map((inst) => {
               const instIndex = currentIndex; currentIndex++
               const isSelected = selectedIndex === instIndex
-              
-              // Pass pre-computed values to InstanceRow to minimize its re-renders
-              const status = getEffectiveStatus(inst)
-              const longRunning = isLongRunning(inst)
-              const busyDuration = getBusyDuration(inst)
-
               return (
                 <InstanceRow
                   key={inst.instanceId}
                   instance={inst}
                   isSelected={isSelected}
-                  status={status}
-                  longRunning={longRunning}
-                  busyDuration={busyDuration}
-                  currentTime={currentTime}
                   indent={3}
                 />
               )

@@ -2,6 +2,7 @@
 
 import React, { useContext } from 'react'
 import { Text } from 'ink'
+import { useTime, useStatusHelpers } from './AppContext.js'
 import { SpinnerContext } from './App.js'
 import type { Instance } from '../types.js'
 
@@ -10,10 +11,6 @@ const SPINNER_CHARS = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '
 interface InstanceRowProps {
   instance: Instance
   isSelected: boolean
-  status: 'idle' | 'busy' | 'stale'
-  longRunning: boolean
-  busyDuration: number
-  currentTime: number
   indent?: number
   showProject?: boolean
 }
@@ -21,14 +18,16 @@ interface InstanceRowProps {
 export const InstanceRow = React.memo(({ 
   instance, 
   isSelected, 
-  status,
-  longRunning,
-  busyDuration,
-  currentTime,
   indent = 0,
   showProject = false 
 }: InstanceRowProps): React.ReactElement => {
+  const currentTime = useTime()
+  const { getEffectiveStatus, isLongRunning, getBusyDuration } = useStatusHelpers()
   const spinnerFrame = useContext(SpinnerContext)
+  
+  const status = getEffectiveStatus(instance)
+  const longRunning = isLongRunning(instance)
+  const busyDuration = getBusyDuration(instance)
   
   // Status indicator
   let statusIcon: string

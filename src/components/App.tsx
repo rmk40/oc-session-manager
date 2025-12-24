@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react'
 import { Box, useApp as useInkApp, useInput, useStdout } from 'ink'
-import { useAppState, useAppActions, useStatusHelpers } from './AppContext.js'
+import { useAppState, useAppActions, useViewState, useStatusHelpers } from './AppContext.js'
 import { Header } from './Header.js'
 import { GroupedView } from './GroupedView.js'
 import { FlatView } from './FlatView.js'
@@ -17,40 +17,26 @@ export const SpinnerContext = React.createContext(0)
 export function App(): React.ReactElement {
   const { exit } = useInkApp()
   const { stdout } = useStdout()
-  const state = useAppState()
+  const { instances } = useAppState()
+  const { viewMode, selectedIndex, collapsedGroups, detailView, sessionViewActive } = useViewState()
   const actions = useAppActions()
   const { getEffectiveStatus } = useStatusHelpers()
   
   const [spinnerFrame, setSpinnerFrame] = useState(0)
-  const [terminalSize, setTerminalSize] = useState({
-    columns: stdout?.columns || 80,
-    rows: stdout?.rows || 24
-  })
-
-  // Track terminal resize stably
-  useEffect(() => {
-    const handleResize = () => {
-      setTerminalSize({
-        columns: process.stdout.columns || 80,
-        rows: process.stdout.rows || 24
-      })
-    }
-    process.stdout.on('resize', handleResize)
-    return () => {
-      process.stdout.off('resize', handleResize)
-    }
-  }, [])
+  
+  // Get terminal dimensions
+  const termWidth = stdout?.columns || 80
+  const termHeight = stdout?.rows || 24
   
   // Check if any instance is busy (for spinner animation)
   const hasBusyInstances = useMemo(() => {
-    for (const inst of state.instances.values()) {
+    for (const inst of instances.values()) {
       if (getEffectiveStatus(inst) === 'busy') return true
     }
     return false
-  }, [state.instances, getEffectiveStatus])
+  }, [instances, getEffectiveStatus])
   
   // Main animation loop - updates currentTime
-  // Stable dependency because actions.tick is memoized without dependencies in AppProvider
   useEffect(() => {
     const interval = setInterval(() => {
       actions.tick()
@@ -69,8 +55,8 @@ export function App(): React.ReactElement {
   
   // Handle keyboard input
   useInput((input, key) => {
-    if (state.sessionViewActive) return
-    if (state.detailView) {
+    if (sessionViewActive) return
+    if (detailView) {
         if (key.escape || key.return) actions.setDetailView(null)
         return
     }
@@ -83,18 +69,18 @@ export function App(): React.ReactElement {
     const itemCount = getSelectableItemCount()
     
     if (key.upArrow || input === 'k') {
-      if (state.selectedIndex > 0) actions.setSelectedIndex(state.selectedIndex - 1)
-      else if (state.selectedIndex === -1 && itemCount > 0) actions.setSelectedIndex(itemCount - 1)
+      if (selectedIndex > 0) actions.setSelectedIndex(selectedIndex - 1)
+      else if (selectedIndex === -1 && itemCount > 0) actions.setSelectedIndex(itemCount - 1)
       return
     }
     
     if (key.downArrow || input === 'j') {
-      if (state.selectedIndex < itemCount - 1) actions.setSelectedIndex(state.selectedIndex + 1)
+      if (selectedIndex < itemCount - 1) actions.setSelectedIndex(selectedIndex + 1)
       return
     }
     
     if (key.tab) {
-      actions.setViewMode(state.viewMode === 'grouped' ? 'flat' : 'grouped')
+      actions.setViewMode(viewMode === 'grouped' ? 'flat' : 'grouped')
       actions.setSelectedIndex(-1)
       return
     }
@@ -127,30 +113,30 @@ export function App(): React.ReactElement {
   })
 
   function getSelectableItemCount(): number {
-    if (state.viewMode === 'flat') return state.instances.size
+    if (viewMode === 'flat') return instances.size
     const groups = getGroupedInstances()
     let count = 0
     for (const [groupKey, groupInstances] of groups) {
       count++
-      if (!state.collapsedGroups.has(groupKey)) count += groupInstances.length
+      if (!collapsedGroups.has(groupKey)) count += groupInstances.length
     }
     return count
   }
 
   function getSelectedItem(): { type: 'group' | 'instance'; key?: string; instanceId?: string } | null {
-    if (state.selectedIndex < 0) return null
-    if (state.viewMode === 'flat') {
-      const insts = Array.from(state.instances.values())
-      return state.selectedIndex < insts.length ? { type: 'instance', instanceId: insts[state.selectedIndex].instanceId } : null
+    if (selectedIndex < 0) return null
+    if (viewMode === 'flat') {
+      const insts = Array.from(instances.values())
+      return selectedIndex < insts.length ? { type: 'instance', instanceId: insts[selectedIndex].instanceId } : null
     }
     const groups = getGroupedInstances()
     let idx = 0
     for (const [groupKey, groupInstances] of groups) {
-      if (idx === state.selectedIndex) return { type: 'group', key: groupKey }
+      if (idx === selectedIndex) return { type: 'group', key: groupKey }
       idx++
-      if (!state.collapsedGroups.has(groupKey)) {
+      if (!collapsedGroups.has(groupKey)) {
         for (const inst of groupInstances) {
-          if (idx === state.selectedIndex) return { type: 'instance', instanceId: inst.instanceId }
+          if (idx === selectedIndex) return { type: 'instance', instanceId: inst.instanceId }
           idx++
         }
       }
@@ -163,7 +149,7 @@ export function App(): React.ReactElement {
     if (!item) return
     if (item.type === 'group' && item.key) actions.toggleCollapsedGroup(item.key)
     else if (item.type === 'instance' && item.instanceId) {
-      const inst = state.instances.get(item.instanceId)
+      const inst = instances.get(item.instanceId)
       if (inst) actions.enterSessionView(inst)
     }
   }
@@ -173,7 +159,7 @@ export function App(): React.ReactElement {
     if (!item) return
     if (item.type === 'instance' && item.instanceId) actions.removeInstance(item.instanceId)
     else if (item.type === 'group' && item.key) {
-      for (const inst of state.instances.values()) {
+      for (const inst of instances.values()) {
         const project = inst.project || inst.dirName || 'unknown'
         const branch = inst.branch || 'main'
         if (`${project}:${branch}` === item.key) actions.removeInstance(inst.instanceId)
@@ -182,7 +168,7 @@ export function App(): React.ReactElement {
   }
 
   function getGroupedInstances(): [string, Instance[]][] {
-    const sorted = Array.from(state.instances.values()).sort((a, b) => (a.instanceId || '').localeCompare(b.instanceId || ''))
+    const sorted = Array.from(instances.values()).sort((a, b) => (a.instanceId || '').localeCompare(b.instanceId || ''))
     const groups = new Map<string, Instance[]>()
     for (const inst of sorted) {
       const project = inst.project || inst.dirName || 'unknown'
@@ -195,7 +181,7 @@ export function App(): React.ReactElement {
   }
 
   // Views
-  if (state.sessionViewActive) {
+  if (sessionViewActive) {
     return (
       <SpinnerContext.Provider value={spinnerFrame}>
         <Box width="100%" height="100%">
@@ -205,8 +191,8 @@ export function App(): React.ReactElement {
     )
   }
   
-  if (state.detailView) {
-    const inst = state.instances.get(state.detailView)
+  if (detailView) {
+    const inst = instances.get(detailView)
     if (inst) return (
       <SpinnerContext.Provider value={spinnerFrame}>
         <Box width="100%" height="100%">
@@ -222,11 +208,10 @@ export function App(): React.ReactElement {
         flexDirection="column" 
         width="100%"
         height="100%"
-        paddingX={1}
       >
         <Header />
         <Box flexDirection="column" flexGrow={1} overflow="hidden">
-          {state.viewMode === 'grouped' ? <GroupedView /> : <FlatView />}
+          {viewMode === 'grouped' ? <GroupedView /> : <FlatView />}
         </Box>
         <HelpBar />
       </Box>
