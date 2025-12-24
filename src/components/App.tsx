@@ -1,7 +1,7 @@
 // Main App component - Full-screen TUI using Ink best practices
 
 import React, { useState, useEffect, useMemo } from 'react'
-import { Box, useApp as useInkApp, useInput, useStdout } from 'ink'
+import { Box, useApp as useInkApp, useInput } from 'ink'
 import { useAppState, useAppActions, useViewState, useStatusHelpers } from './AppContext.js'
 import { Header } from './Header.js'
 import { GroupedView } from './GroupedView.js'
@@ -16,30 +16,12 @@ export const SpinnerContext = React.createContext(0)
 
 export function App(): React.ReactElement {
   const { exit } = useInkApp()
-  const { stdout } = useStdout()
   const { instances } = useAppState()
-  const { viewMode, selectedIndex, collapsedGroups, detailView, sessionViewActive } = useViewState()
+  const { viewMode, selectedIndex, collapsedGroups, detailView, sessionViewActive, terminalSize } = useViewState()
   const actions = useAppActions()
   const { getEffectiveStatus } = useStatusHelpers()
   
   const [spinnerFrame, setSpinnerFrame] = useState(0)
-  const [terminalSize, setTerminalSize] = useState({
-    columns: stdout?.columns || 80,
-    rows: stdout?.rows || 24
-  })
-
-  useEffect(() => {
-    const handleResize = () => {
-      setTerminalSize({
-        columns: process.stdout.columns || 80,
-        rows: process.stdout.rows || 24
-      })
-    }
-    process.stdout.on('resize', handleResize)
-    return () => {
-      process.stdout.off('resize', handleResize)
-    }
-  }, [])
   
   const hasBusyInstances = useMemo(() => {
     for (const inst of instances.values()) {
@@ -221,6 +203,13 @@ export function App(): React.ReactElement {
     )
   }
 
+  // Calculate if we should show split view
+  const isSplitView = terminalSize.columns > 140
+  const selectedItem = getSelectedItem()
+  const selectedInstance = (selectedItem?.type === 'instance' && selectedItem.instanceId) 
+    ? instances.get(selectedItem.instanceId) 
+    : null
+
   return (
     <SpinnerContext.Provider value={spinnerFrame}>
       <Box 
@@ -231,9 +220,21 @@ export function App(): React.ReactElement {
         borderColor="cyan"
       >
         <Header />
-        <Box flexDirection="column" flexGrow={1} overflow="hidden">
-          {viewMode === 'grouped' ? <GroupedView /> : <FlatView />}
+        
+        <Box flexDirection="row" flexGrow={1} overflow="hidden">
+            {/* Main List */}
+            <Box flexDirection="column" flexGrow={1} overflow="hidden">
+              {viewMode === 'grouped' ? <GroupedView /> : <FlatView />}
+            </Box>
+
+            {/* Detail Sidebar (if wide enough and instance selected) */}
+            {isSplitView && selectedInstance && (
+                <Box width={60} borderStyle="single" borderLeft borderTop={false} borderBottom={false} borderRight={false} paddingLeft={1}>
+                    <DetailView instance={selectedInstance} isSidebar={true} />
+                </Box>
+            )}
         </Box>
+
         <HelpBar />
       </Box>
     </SpinnerContext.Provider>

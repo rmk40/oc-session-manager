@@ -1,16 +1,17 @@
-// Detail view for a single instance - full screen
+// Detail view for a single instance - full screen or sidebar
 
 import React from 'react'
 import { Box, Text, Spacer } from 'ink'
-import { useAppState, useStatusHelpers } from './AppContext.js'
+import { useTime, useStatusHelpers } from './AppContext.js'
 import type { Instance } from '../types.js'
 
 interface DetailViewProps {
   instance: Instance
+  isSidebar?: boolean
 }
 
-export const DetailView = React.memo(({ instance }: DetailViewProps): React.ReactElement => {
-  const { currentTime } = useAppState()
+export const DetailView = React.memo(({ instance, isSidebar = false }: DetailViewProps): React.ReactElement => {
+  const currentTime = useTime()
   const { getEffectiveStatus, isLongRunning, getBusyDuration } = useStatusHelpers()
   
   const status = getEffectiveStatus(instance)
@@ -27,64 +28,74 @@ export const DetailView = React.memo(({ instance }: DetailViewProps): React.Reac
   const tokOut = instance.tokens?.output ?? 0
   const tokTotal = instance.tokens?.total ?? 0
 
+  const content = (
+    <Box flexDirection="column" flexGrow={1}>
+        {/* Header */}
+        <Box>
+            <Text bold color="cyan">{isSidebar ? "DETAILS" : identifier}</Text>
+        </Box>
+        
+        {/* Content area */}
+        <Box flexDirection="column" flexGrow={1}>
+            {/* Status */}
+            <Box marginTop={isSidebar ? 0 : 1}>
+            <Text>Status: </Text>
+            <Text color={statusColors[status]}>
+                {statusIcons[status]} {status.toUpperCase()}
+            </Text>
+            </Box>
+            
+            {/* Session info */}
+            <Box flexDirection="column" marginTop={1}>
+            {isSidebar && <Text color="yellow">ID: {instance.sessionID?.slice(0, 8)}...</Text>}
+            {!isSidebar && <Text>Session ID: {instance.sessionID ?? 'N/A'}</Text>}
+            {instance.parentID && <Text>Parent ID: {instance.parentID.slice(0, 8)}...</Text>}
+            <Text>Title: {instance.title ?? 'N/A'}</Text>
+            <Text>Dir: {instance.dirName ?? 'N/A'}</Text>
+            <Text>Host: {instance.host ?? 'N/A'}</Text>
+            </Box>
+            
+            {/* Model & Cost */}
+            <Box flexDirection="column" marginTop={1}>
+            <Text>Model: {instance.model ?? 'N/A'}</Text>
+            <Text>Cost: {formatCost(instance.cost) || '$0.00'}</Text>
+            <Text>Tokens: {tokTotal.toLocaleString()} ({tokIn.toLocaleString()}i / {tokOut.toLocaleString()}o)</Text>
+            </Box>
+            
+            {/* Timing */}
+            <Box flexDirection="column" marginTop={1}>
+            <Text>Updated: {formatRelativeTime(instance.ts, currentTime)}</Text>
+            {status === 'busy' && (
+                <Text color={isLongRunning(instance) ? 'red' : undefined}>
+                Busy: {formatDuration(getBusyDuration(instance))}
+                {isLongRunning(instance) && ' !'}
+                </Text>
+            )}
+            </Box>
+            
+            <Spacer />
+        </Box>
+        
+        {/* Help bar at bottom */}
+        {!isSidebar && (
+            <Box borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false}>
+                <Text dimColor>Esc/Enter: back  d: remove</Text>
+            </Box>
+        )}
+    </Box>
+  )
+
+  if (isSidebar) {
+    return content
+  }
+
   return (
     <Box 
       flexDirection="column" 
       paddingX={1}
       flexGrow={1}
     >
-      {/* Header */}
-      <Box>
-        <Text bold color="cyan">{identifier}</Text>
-      </Box>
-      
-      {/* Content area */}
-      <Box flexDirection="column" flexGrow={1}>
-        {/* Status */}
-        <Box marginTop={1}>
-          <Text>Status: </Text>
-          <Text color={statusColors[status]}>
-            {statusIcons[status]} {status.toUpperCase()}
-          </Text>
-        </Box>
-        
-        {/* Session info */}
-        <Box flexDirection="column" marginTop={1}>
-          <Text>Session ID: {instance.sessionID ?? 'N/A'}</Text>
-          {instance.parentID && <Text>Parent ID: {instance.parentID}</Text>}
-          <Text>Title: {instance.title ?? 'N/A'}</Text>
-          <Text>Directory: {instance.directory ?? 'N/A'}</Text>
-          <Text>Host: {instance.host ?? 'N/A'}</Text>
-        </Box>
-        
-        {/* Model & Cost */}
-        <Box flexDirection="column" marginTop={1}>
-          <Text>Model: {instance.model ?? 'N/A'}</Text>
-          <Text>Cost: {formatCost(instance.cost) || '$0.00'}</Text>
-          <Text>Tokens: {tokTotal.toLocaleString()} total ({tokIn.toLocaleString()} in / {tokOut.toLocaleString()} out)</Text>
-        </Box>
-        
-        {/* Timing */}
-        <Box flexDirection="column" marginTop={1}>
-          <Text>Last Update: {formatRelativeTime(instance.ts, currentTime)}</Text>
-          {instance.busyTime !== undefined && (
-            <Text>Total Busy Time: {formatDuration(instance.busyTime)}</Text>
-          )}
-          {status === 'busy' && (
-            <Text color={isLongRunning(instance) ? 'red' : undefined}>
-              Busy For: {formatDuration(getBusyDuration(instance))}
-              {isLongRunning(instance) && ' LONG RUNNING'}
-            </Text>
-          )}
-        </Box>
-        
-        <Spacer />
-      </Box>
-      
-      {/* Help bar at bottom */}
-      <Box borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false}>
-        <Text dimColor>Esc/Enter: back  d: remove</Text>
-      </Box>
+      {content}
     </Box>
   )
 })
@@ -111,6 +122,6 @@ function formatDuration(ms: number): string {
     const mins = Math.floor(ms / 60000); const secs = Math.floor((ms % 60000) / 1000)
     return `${mins}m ${secs}s`
   }
-  const hours = Math.floor(ms / 33600000); const mins = Math.floor((ms % 3600000) / 60000)
+  const hours = Math.floor(ms / 3600000); const mins = Math.floor((ms % 3600000) / 60000)
   return `${hours}h ${mins}m`
 }

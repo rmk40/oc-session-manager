@@ -2,17 +2,18 @@
 
 import React from 'react'
 import { Box, Text, Spacer } from 'ink'
-import { useAppState } from './AppContext.js'
+import { useAppState, useViewState } from './AppContext.js'
 
 export const SessionView = React.memo((): React.ReactElement => {
-  const state = useAppState()
+  const { sessionViewInstance, sessionViewSessionID, sessionViewStatus, sessionViewSessions, sessionViewSessionIndex, sessionViewSessionTitle, sessionViewConnecting, sessionViewError, sessionViewConfirmAbort, sessionViewInputMode, sessionViewPendingPermissions, sessionViewRenderedLines, terminalSize } = useViewState()
   
-  const inst = state.sessionViewInstance
+  const width = terminalSize.columns
+  const inst = sessionViewInstance
   const identifier = inst 
-    ? `${inst.dirName ?? '?'}:${inst.branch ?? '?'}:${state.sessionViewSessionID?.slice(-4) ?? '----'}`
+    ? `${inst.dirName ?? '?'}:${inst.branch ?? '?'}:${sessionViewSessionID?.slice(-4) ?? '----'}`
     : 'Unknown'
   
-  const status = state.sessionViewStatus || 'idle'
+  const status = sessionViewStatus || 'idle'
   const statusColors: Record<string, 'green' | 'yellow' | 'gray'> = { 
     idle: 'green', busy: 'yellow', running: 'yellow', pending: 'yellow' 
   }
@@ -22,8 +23,8 @@ export const SessionView = React.memo((): React.ReactElement => {
   
   const statusColor = statusColors[status] || 'gray'
   const statusIcon = statusIcons[status] || '◌'
-  const hasMultipleSessions = state.sessionViewSessions.length > 1
-  const navIndicator = hasMultipleSessions ? ` [${state.sessionViewSessionIndex + 1}/${state.sessionViewSessions.length}]` : ''
+  const hasMultipleSessions = sessionViewSessions.length > 1
+  const navIndicator = hasMultipleSessions ? ` [${sessionViewSessionIndex + 1}/${sessionViewSessions.length}]` : ''
 
   return (
     <Box 
@@ -32,39 +33,62 @@ export const SessionView = React.memo((): React.ReactElement => {
       flexGrow={1}
     >
       {/* Header */}
-      <Box justifyContent="space-between">
+      <Box justifyContent="space-between" borderStyle="single" borderBottom borderTop={false} borderLeft={false} borderRight={false} marginBottom={1}>
         <Box>
-          <Text bold>{identifier}</Text>
-          {state.sessionViewSessionTitle && (
-            <Text dimColor> "{truncate(state.sessionViewSessionTitle, 30)}"</Text>
+          <Text bold color="cyan">{identifier}</Text>
+          {sessionViewSessionTitle && (
+            <Text dimColor> "{truncate(sessionViewSessionTitle, width > 100 ? 60 : 30)}"</Text>
           )}
-          <Text>{navIndicator}</Text>
+          <Text color="yellow">{navIndicator}</Text>
         </Box>
         <Text color={statusColor}>{statusIcon} {status.toUpperCase()}</Text>
       </Box>
       
-      {/* Content area */}
-      <Box flexDirection="column" flexGrow={1} overflow="hidden">
-        {state.sessionViewConnecting ? (
-          <CenteredMessage message="Connecting..." />
-        ) : state.sessionViewError ? (
-          <CenteredMessage message={`Error: ${state.sessionViewError}`} color="red" />
-        ) : state.sessionViewConfirmAbort ? (
-          <ConfirmAbort />
-        ) : state.sessionViewInputMode ? (
-          <InputMode />
-        ) : state.sessionViewPendingPermissions.size > 0 ? (
-          <PermissionPrompt />
-        ) : (
-          <MessageContent />
-        )}
+      <Box flexDirection="row" flexGrow={1} overflow="hidden">
+          {/* Main Area */}
+          <Box flexDirection="column" flexGrow={1} overflow="hidden">
+            {sessionViewConnecting ? (
+              <CenteredMessage message="Connecting..." />
+            ) : sessionViewError ? (
+              <CenteredMessage message={`Error: ${sessionViewError}`} color="red" />
+            ) : sessionViewConfirmAbort ? (
+              <ConfirmAbort />
+            ) : sessionViewInputMode ? (
+              <InputMode />
+            ) : sessionViewPendingPermissions.size > 0 ? (
+              <PermissionPrompt />
+            ) : (
+              <MessageContent />
+            )}
+          </Box>
+
+          {/* Right Sidebar (only if wide) - shows session list or instance details */}
+          {width > 150 && inst && (
+              <Box width={40} borderStyle="single" borderLeft borderTop={false} borderBottom={false} borderRight={false} paddingLeft={1} flexDirection="column">
+                  <Text bold dimColor underline>SESSION INFO</Text>
+                  <Text>Model: {inst.model || '?'}</Text>
+                  <Text>Cost: ${inst.cost?.toFixed(4) || '0'}</Text>
+                  <Text>Tokens: {inst.tokens?.total || 0}</Text>
+                  <Spacer />
+                  {hasMultipleSessions && (
+                      <Box flexDirection="column">
+                          <Text bold dimColor underline>OTHER SESSIONS</Text>
+                          {sessionViewSessions.slice(0, 10).map((sess, idx) => (
+                              <Text key={sess.id} color={idx === sessionViewSessionIndex ? "cyan" : undefined}>
+                                  {idx === sessionViewSessionIndex ? "➔" : " "} {truncate(sess.title || sess.id?.slice(0, 8), 30)}
+                              </Text>
+                          ))}
+                      </Box>
+                  )}
+              </Box>
+          )}
       </Box>
       
-      {/* Session navigation bar */}
-      {hasMultipleSessions && (
+      {/* Session navigation bar (Horizontal if wide, original if not) */}
+      {hasMultipleSessions && width <= 150 && (
         <Box borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false}>
-          {state.sessionViewSessions.map((sess: any, idx: number) => {
-            const isCurrent = idx === state.sessionViewSessionIndex
+          {sessionViewSessions.map((sess: any, idx: number) => {
+            const isCurrent = idx === sessionViewSessionIndex
             const sessStatus = String(sess.status || 'idle')
             const sessColor = statusColors[sessStatus] || 'gray'
             const sessIcon = statusIcons[sessStatus] || '◌'
@@ -81,12 +105,12 @@ export const SessionView = React.memo((): React.ReactElement => {
       )}
       
       {/* Help bar at bottom */}
-      <Box borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false}>
+      <Box borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false} marginTop={1}>
         <Text dimColor>
           [Esc] back  [↑↓] scroll
           {hasMultipleSessions && '  [Ctrl+←/→] switch session'}
           {(status === 'busy' || status === 'running' || status === 'pending') && '  [a]bort'}
-          {state.sessionViewPendingPermissions.size > 0 && '  [p]ermissions'}
+          {sessionViewPendingPermissions.size > 0 && '  [p]ermissions'}
           {'  [m]essage'}
         </Text>
       </Box>
@@ -105,21 +129,21 @@ function CenteredMessage({ message, color }: { message: string; color?: string }
 function ConfirmAbort(): React.ReactElement {
   return (
     <Box flexDirection="column" justifyContent="center" alignItems="center" flexGrow={1}>
-      <Text color="yellow">Abort this session?</Text>
+      <Text color="yellow" bold>ABORT THIS SESSION?</Text>
       <Text dimColor>[y]es  [n]o</Text>
     </Box>
   )
 }
 
 function InputMode(): React.ReactElement {
-  const state = useAppState()
+  const { sessionViewInputBuffer } = useViewState()
   return (
     <Box flexDirection="column" flexGrow={1}>
       <Box flexGrow={1} overflow="hidden"><MessageContent /></Box>
-      <Box borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false}>
-        <Text color="green">&gt; </Text>
-        <Text>{state.sessionViewInputBuffer}</Text>
-        <Text>▌</Text>
+      <Box borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false} paddingY={1}>
+        <Text color="green" bold>&gt; </Text>
+        <Text>{sessionViewInputBuffer}</Text>
+        <Text backgroundColor="white" color="black"> </Text>
       </Box>
       <Box><Text dimColor>[Enter] send  [Esc] cancel</Text></Box>
     </Box>
@@ -127,30 +151,32 @@ function InputMode(): React.ReactElement {
 }
 
 function PermissionPrompt(): React.ReactElement {
-  const state = useAppState()
-  const entries = Array.from(state.sessionViewPendingPermissions.entries())
+  const { sessionViewPendingPermissions } = useViewState()
+  const entries = Array.from(sessionViewPendingPermissions.entries())
   const [permId, perm] = entries[0] || []
   if (!perm) return <MessageContent />
   
   return (
     <Box flexDirection="column" flexGrow={1}>
       <Box flexGrow={1} overflow="hidden"><MessageContent /></Box>
-      <Box flexDirection="column" borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false}>
-        <Text color="yellow">Permission Request</Text>
-        <Text>Tool: {perm.tool || 'unknown'}</Text>
-        {perm.args && <Text dimColor>{truncate(formatArgs(perm.args), 60)}</Text>}
-        <Text dimColor>[a]llow  [A]llow always  [d]eny  [D]eny always  [Esc] dismiss</Text>
+      <Box flexDirection="column" borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false} paddingY={1}>
+        <Text color="yellow" bold>PERMISSION REQUEST</Text>
+        <Text>Tool: <Text color="cyan">{perm.tool || 'unknown'}</Text></Text>
+        {perm.args && <Text dimColor>{truncate(formatArgs(perm.args), 80)}</Text>}
+        <Box marginTop={1}>
+            <Text dimColor>[a]llow  [A]llow always  [d]eny  [D]eny always  [Esc] dismiss</Text>
+        </Box>
       </Box>
     </Box>
   )
 }
 
 function MessageContent(): React.ReactElement {
-  const state = useAppState()
-  if (state.sessionViewRenderedLines.length === 0) return <CenteredMessage message="No messages yet" />
+  const { sessionViewRenderedLines } = useViewState()
+  if (sessionViewRenderedLines.length === 0) return <CenteredMessage message="No messages yet" />
   return (
     <Box flexDirection="column" overflow="hidden">
-      {state.sessionViewRenderedLines.map((line, idx) => (
+      {sessionViewRenderedLines.map((line, idx) => (
         <Text key={`line-${idx}`}>{line.text || line.plain}</Text>
       ))}
     </Box>

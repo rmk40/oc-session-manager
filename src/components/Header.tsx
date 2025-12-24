@@ -6,9 +6,11 @@ import { useAppState, useViewState, useStatusHelpers } from './AppContext.js'
 
 export const Header = React.memo((): React.ReactElement => {
   const { instances } = useAppState()
-  const { viewMode } = useViewState()
+  const { viewMode, terminalSize } = useViewState()
   const { getEffectiveStatus } = useStatusHelpers()
   
+  const width = terminalSize.columns
+
   // Count instances by status
   let idle = 0, busy = 0, stale = 0
   for (const inst of instances.values()) {
@@ -24,7 +26,7 @@ export const Header = React.memo((): React.ReactElement => {
   
   return (
     <Box 
-      flexDirection="column" 
+      flexDirection={width > 100 ? "row" : "column"} 
       paddingX={1}
       borderStyle="single"
       borderBottom
@@ -32,6 +34,8 @@ export const Header = React.memo((): React.ReactElement => {
       borderLeft={false}
       borderRight={false}
       marginBottom={1}
+      justifyContent="space-between"
+      alignItems={width > 100 ? "center" : "flex-start"}
     >
       <Box>
         <Text bold color={isAnyBusy ? 'yellow' : 'cyan'}>
@@ -39,12 +43,18 @@ export const Header = React.memo((): React.ReactElement => {
         </Text>
       </Box>
       
-      <Box gap={2} marginBottom={1}>
+      <Box gap={2} marginBottom={width > 100 ? 0 : 1}>
         <Text color="green">● IDLE: {idle}</Text>
         <Text color="yellow">○ BUSY: {busy}</Text>
         <Text color="gray">◌ STALE: {stale}</Text>
         <Text dimColor>TOTAL: {total}</Text>
       </Box>
+      
+      {width > 120 && (
+          <Box>
+              <Text dimColor>Terminal: {width}x{terminalSize.rows}</Text>
+          </Box>
+      )}
     </Box>
   )
 })

@@ -1,6 +1,7 @@
 // React Context for shared application state
 
 import React, { createContext, useContext, useState, useCallback, useMemo, useRef, useEffect, type ReactNode } from 'react'
+import { useStdout } from 'ink'
 import type { Instance, ViewMode, Permission, Message, RenderedLine } from '../types.js'
 import { STALE_TIMEOUT_MS, LONG_RUNNING_MS } from '../config.js'
 
@@ -35,6 +36,7 @@ export interface ViewState {
   sessionViewSessions: any[]
   sessionViewSessionIndex: number
   sessionViewSessionTitle: string
+  terminalSize: { columns: number; rows: number }
 }
 
 export interface AppActions {
@@ -135,19 +137,17 @@ export function useApp(): { state: AppState & ViewState & { currentTime: number 
 // ---------------------------------------------------------------------------
 
 export function AppProvider({ children }: { children: ReactNode }): React.ReactElement {
-  // Instance tracking
+  const { stdout } = useStdout()
   const [instances, setInstances] = useState<Map<string, Instance>>(new Map())
   const [busySince, setBusySince] = useState<Map<string, number>>(new Map())
   const [idleSince, setIdleSince] = useState<Map<string, number>>(new Map())
   const [currentTime, setCurrentTime] = useState<number>(Date.now())
   
-  // View state
   const [viewMode, setViewModeInternal] = useState<ViewMode>('grouped')
   const [selectedIndex, setSelectedIndexInternal] = useState(-1)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [detailView, setDetailViewInternal] = useState<string | null>(null)
   
-  // Session viewer state
   const [sessionViewActive, setSessionViewActive] = useState(false)
   const [sessionViewInstance, setSessionViewInstance] = useState<Instance | null>(null)
   const [sessionViewSessionID, setSessionViewSessionID] = useState<string | null>(null)
@@ -164,6 +164,23 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
   const [sessionViewSessions, setSessionViewSessionsInternal] = useState<any[]>([])
   const [sessionViewSessionIndex, setSessionViewSessionIndexInternal] = useState(0)
   const [sessionViewSessionTitle, setSessionViewSessionTitleInternal] = useState('')
+  const [terminalSize, setTerminalSize] = useState({
+    columns: stdout?.columns || 80,
+    rows: stdout?.rows || 24
+  })
+
+  useEffect(() => {
+    const handleResize = () => {
+      setTerminalSize({
+        columns: process.stdout.columns || 80,
+        rows: process.stdout.rows || 24
+      })
+    }
+    process.stdout.on('resize', handleResize)
+    return () => {
+      process.stdout.off('resize', handleResize)
+    }
+  }, [])
 
   // Throttle state updates
   const instancesRef = useRef<Map<string, Instance>>(new Map())
@@ -185,7 +202,6 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
     instancesRef.current.set(id, instance)
     dirtyRef.current = true
     
-    // Manage busy/idle timestamps in a separate state update (less frequent than heartbeats)
     setBusySince(prevBusy => {
       const oldInst = instancesRef.current.get(id)
       const getStat = (inst: Instance | undefined) => {
@@ -298,12 +314,13 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
     sessionViewStatus, 
     sessionViewSessions, 
     sessionViewSessionIndex, 
-    sessionViewSessionTitle
+    sessionViewSessionTitle,
+    terminalSize
   }), [
     viewMode, selectedIndex, collapsedGroups, detailView, sessionViewActive, sessionViewInstance, sessionViewSessionID,
     sessionViewMessages, sessionViewScrollOffset, sessionViewRenderedLines, sessionViewPendingPermissions,
     sessionViewInputMode, sessionViewInputBuffer, sessionViewConfirmAbort, sessionViewError, sessionViewConnecting,
-    sessionViewStatus, sessionViewSessions, sessionViewSessionIndex, sessionViewSessionTitle
+    sessionViewStatus, sessionViewSessions, sessionViewSessionIndex, sessionViewSessionTitle, terminalSize
   ])
 
   return (

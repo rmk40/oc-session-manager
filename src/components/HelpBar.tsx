@@ -5,13 +5,14 @@ import { Box, Text } from 'ink'
 import { useViewState } from './AppContext.js'
 
 export const HelpBar = React.memo((): React.ReactElement => {
-  const { viewMode } = useViewState()
+  const { viewMode, terminalSize } = useViewState()
   
+  const width = terminalSize.columns
   const viewToggle = viewMode === 'grouped' ? 'flat' : 'grouped'
   
   return (
     <Box 
-      flexDirection="column"
+      flexDirection="row"
       paddingX={1} 
       borderStyle="single"
       borderTop
@@ -19,10 +20,19 @@ export const HelpBar = React.memo((): React.ReactElement => {
       borderLeft={false}
       borderRight={false}
       marginTop={1}
+      justifyContent="space-between"
     >
-      <Text dimColor>
-        q: quit  ↑↓/jk: nav  Enter: watch  i: info  d: remove  c: clear stale  Tab: {viewToggle}
-      </Text>
+      <Box>
+        <Text dimColor>
+          q: quit  ↑↓/jk: nav  Enter: watch  i: info  d: remove  c: clear stale  Tab: {viewToggle}
+        </Text>
+      </Box>
+      
+      {width > 150 && (
+          <Box>
+              <Text dimColor>Wide Terminal: Split-View Details Enabled</Text>
+          </Box>
+      )}
     </Box>
   )
 })

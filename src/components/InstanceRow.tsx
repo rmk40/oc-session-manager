@@ -2,7 +2,7 @@
 
 import React, { useContext } from 'react'
 import { Text, Box } from 'ink'
-import { useTime, useStatusHelpers } from './AppContext.js'
+import { useTime, useStatusHelpers, useViewState } from './AppContext.js'
 import { SpinnerContext } from './App.js'
 import type { Instance } from '../types.js'
 
@@ -15,16 +15,11 @@ interface InstanceRowProps {
   showProject?: boolean
 }
 
-/**
- * Optimized status indicator that handles its own time-based logic
- */
 const StatusIndicator = React.memo(({ instance }: { instance: Instance }) => {
   const { getEffectiveStatus, isLongRunning } = useStatusHelpers()
   const spinnerFrame = useContext(SpinnerContext)
-  
   const status = getEffectiveStatus(instance)
   const longRunning = isLongRunning(instance)
-  
   if (status === 'idle') return <Text color="green">●</Text>
   if (status === 'busy') {
     if (longRunning) return <Text color="red">!</Text>
@@ -33,20 +28,12 @@ const StatusIndicator = React.memo(({ instance }: { instance: Instance }) => {
   return <Text color="gray">◌</Text>
 })
 
-/**
- * Optimized time display that handles its own 1s tick
- */
 const RelativeTime = React.memo(({ instance }: { instance: Instance }) => {
   const currentTime = useTime()
   const { getEffectiveStatus, getBusyDuration } = useStatusHelpers()
-  
   const status = getEffectiveStatus(instance)
   const busyDuration = getBusyDuration(instance)
-  
-  const timeStr = status === 'busy' 
-    ? formatDuration(busyDuration)
-    : formatRelativeTime(instance.ts, currentTime)
-  
+  const timeStr = status === 'busy' ? formatDuration(busyDuration) : formatRelativeTime(instance.ts, currentTime)
   return <Text dimColor>{timeStr.padStart(8)}</Text>
 })
 
@@ -56,29 +43,48 @@ export const InstanceRow = React.memo(({
   indent = 0,
   showProject = false 
 }: InstanceRowProps): React.ReactElement => {
+  const { terminalSize } = useViewState()
+  const width = terminalSize.columns
+  
   const shortSession = instance.sessionID?.slice(-4) ?? '----'
-  const title = instance.title ?? 'Ready'
-  const truncatedTitle = title.length > 40 ? title.slice(0, 37) + '...' : title
   const costStr = formatCost(instance.cost)
   const tokStr = formatTokens(instance.tokens?.total)
   
-  const prefix = showProject 
-    ? `${instance.dirName || '?'}:${instance.branch || '?'}:` 
-    : ''
+  // Adaptive title length based on terminal width
+  let maxTitleWidth = 40
+  if (width > 120) maxTitleWidth = width - 80
+  else if (width > 100) maxTitleWidth = width - 60
+  
+  const title = instance.title ?? 'Ready'
+  const truncatedTitle = title.length > maxTitleWidth ? title.slice(0, maxTitleWidth - 3) + '...' : title
+  
+  const prefix = showProject ? `${instance.dirName || '?'}:${instance.branch || '?'}:` : ''
 
   return (
     <Box>
       <Text color={isSelected ? "cyan" : undefined} bold={isSelected}>
-        {' '.repeat(indent - 2)}
+        {' '.repeat(Math.max(0, indent - 2))}
         {isSelected ? "➔ " : "  "}
         <StatusIndicator instance={instance} />
         {' '}{prefix}{shortSession}{'  '}
         <Text dimColor={!isSelected}>"{truncatedTitle}"</Text>
+      </Text>
+      
+      {width > 110 && instance.model && (
+        <Text dimColor>  [{instance.model}]</Text>
+      )}
+      
+      <Box flexGrow={1} />
+      
+      <Box>
         {costStr && <Text color="magenta">  {costStr}</Text>}
         {tokStr && <Text color="magenta"> {tokStr}</Text>}
+        {width > 130 && instance.tokens && (
+          <Text dimColor> ({instance.tokens.input}i/{instance.tokens.output}o)</Text>
+        )}
         {'  '}
-      </Text>
-      <RelativeTime instance={instance} />
+        <RelativeTime instance={instance} />
+      </Box>
     </Box>
   )
 })
