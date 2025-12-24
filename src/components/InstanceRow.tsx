@@ -1,7 +1,7 @@
 // Single instance row component
 
 import React, { useContext } from 'react'
-import { Text } from 'ink'
+import { Text, Box } from 'ink'
 import { useTime, useStatusHelpers } from './AppContext.js'
 import { SpinnerContext } from './App.js'
 import type { Instance } from '../types.js'
@@ -15,62 +15,71 @@ interface InstanceRowProps {
   showProject?: boolean
 }
 
+/**
+ * Optimized status indicator that handles its own time-based logic
+ */
+const StatusIndicator = React.memo(({ instance }: { instance: Instance }) => {
+  const { getEffectiveStatus, isLongRunning } = useStatusHelpers()
+  const spinnerFrame = useContext(SpinnerContext)
+  
+  const status = getEffectiveStatus(instance)
+  const longRunning = isLongRunning(instance)
+  
+  if (status === 'idle') return <Text color="green">●</Text>
+  if (status === 'busy') {
+    if (longRunning) return <Text color="red">!</Text>
+    return <Text color="yellow">{SPINNER_CHARS[spinnerFrame % SPINNER_CHARS.length]}</Text>
+  }
+  return <Text color="gray">◌</Text>
+})
+
+/**
+ * Optimized time display that handles its own 1s tick
+ */
+const RelativeTime = React.memo(({ instance }: { instance: Instance }) => {
+  const currentTime = useTime()
+  const { getEffectiveStatus, getBusyDuration } = useStatusHelpers()
+  
+  const status = getEffectiveStatus(instance)
+  const busyDuration = getBusyDuration(instance)
+  
+  const timeStr = status === 'busy' 
+    ? formatDuration(busyDuration)
+    : formatRelativeTime(instance.ts, currentTime)
+  
+  return <Text dimColor>{timeStr.padStart(8)}</Text>
+})
+
 export const InstanceRow = React.memo(({ 
   instance, 
   isSelected, 
   indent = 0,
   showProject = false 
 }: InstanceRowProps): React.ReactElement => {
-  const currentTime = useTime()
-  const { getEffectiveStatus, isLongRunning, getBusyDuration } = useStatusHelpers()
-  const spinnerFrame = useContext(SpinnerContext)
-  
-  const status = getEffectiveStatus(instance)
-  const longRunning = isLongRunning(instance)
-  const busyDuration = getBusyDuration(instance)
-  
-  // Status indicator
-  let statusIcon: string
-  let statusColor: 'green' | 'yellow' | 'red' | 'gray'
-  
-  switch (status) {
-    case 'idle':
-      statusIcon = '●'
-      statusColor = 'green'
-      break
-    case 'busy':
-      statusIcon = longRunning ? '!' : SPINNER_CHARS[spinnerFrame % SPINNER_CHARS.length]
-      statusColor = longRunning ? 'red' : 'yellow'
-      break
-    default:
-      statusIcon = '◌'
-      statusColor = 'gray'
-  }
-  
   const shortSession = instance.sessionID?.slice(-4) ?? '----'
-  const title = instance.title ?? (status === 'idle' ? 'Ready for input' : 'Working...')
+  const title = instance.title ?? 'Ready'
   const truncatedTitle = title.length > 40 ? title.slice(0, 37) + '...' : title
   const costStr = formatCost(instance.cost)
   const tokStr = formatTokens(instance.tokens?.total)
-  
-  const timeStr = status === 'busy' 
-    ? formatDuration(busyDuration)
-    : formatRelativeTime(instance.ts, currentTime)
   
   const prefix = showProject 
     ? `${instance.dirName || '?'}:${instance.branch || '?'}:` 
     : ''
 
   return (
-    <Text inverse={isSelected}>
-      {' '.repeat(indent)}
-      <Text color={statusColor}>{statusIcon}</Text>
-      {' '}{prefix}{shortSession}{'  '}
-      <Text dimColor>"{truncatedTitle}"</Text>
-      {costStr && <Text color="magenta">  {costStr}</Text>}
-      {tokStr && <Text color="magenta"> {tokStr}</Text>}
-      <Text dimColor>  {timeStr.padStart(8)}</Text>
-    </Text>
+    <Box>
+      <Text color={isSelected ? "cyan" : undefined} bold={isSelected}>
+        {' '.repeat(indent - 2)}
+        {isSelected ? "➔ " : "  "}
+        <StatusIndicator instance={instance} />
+        {' '}{prefix}{shortSession}{'  '}
+        <Text dimColor={!isSelected}>"{truncatedTitle}"</Text>
+        {costStr && <Text color="magenta">  {costStr}</Text>}
+        {tokStr && <Text color="magenta"> {tokStr}</Text>}
+        {'  '}
+      </Text>
+      <RelativeTime instance={instance} />
+    </Box>
   )
 })
 

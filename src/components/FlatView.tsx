@@ -20,12 +20,13 @@ export const FlatView = React.memo((): React.ReactElement => {
   )
 
   return (
-    <Box flexDirection="column" paddingX={1} overflow="hidden">
+    <Box flexDirection="column" paddingX={1}>
       {sorted.map((inst, idx) => (
         <InstanceRow
           key={inst.instanceId}
           instance={inst}
           isSelected={selectedIndex === idx}
+          indent={2}
           showProject={true}
         />
       ))}

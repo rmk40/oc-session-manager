@@ -30,16 +30,17 @@ export const Header = React.memo((): React.ReactElement => {
     >
       <Box>
         <Text bold color={isAnyBusy ? 'yellow' : 'cyan'}>
-          {title}
+          {title.toUpperCase()}
         </Text>
       </Box>
       
       <Box gap={2}>
-        <Text color="green">● IDLE ({idle})</Text>
-        <Text color="yellow">○ BUSY ({busy})</Text>
-        <Text color="gray">◌ STALE ({stale})</Text>
-        <Text dimColor>Total: {total}</Text>
+        <Text color="green">● IDLE: {idle}</Text>
+        <Text color="yellow">○ BUSY: {busy}</Text>
+        <Text color="gray">◌ STALE: {stale}</Text>
+        <Text dimColor>TOTAL: {total}</Text>
       </Box>
+      <Text dimColor>{"─".repeat(40)}</Text>
     </Box>
   )
 })

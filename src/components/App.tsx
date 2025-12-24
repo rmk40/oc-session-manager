@@ -9,6 +9,7 @@ import { FlatView } from './FlatView.js'
 import { DetailView } from './DetailView.js'
 import { SessionView } from './SessionView.js'
 import { HelpBar } from './HelpBar.js'
+import type { Instance } from '../types.js'
 
 // Spinner context to share frame across components
 export const SpinnerContext = React.createContext(0)
@@ -42,10 +43,10 @@ export function App(): React.ReactElement {
   
   const hasBusyInstances = useMemo(() => {
     for (const inst of instances.values()) {
-      if (getEffectiveStatus(inst) === 'busy') return true
+      if (['busy', 'running', 'pending'].includes(inst.status)) return true
     }
     return false
-  }, [instances, getEffectiveStatus])
+  }, [instances])
   
   useEffect(() => {
     const interval = setInterval(() => {
@@ -189,34 +190,15 @@ export function App(): React.ReactElement {
   }
 
   // Views
-  if (sessionViewActive) {
-    return (
-      <SpinnerContext.Provider value={spinnerFrame}>
-        <Box width="100%" height="100%">
-          <SessionView />
-        </Box>
-      </SpinnerContext.Provider>
-    )
-  }
-  
+  if (sessionViewActive) return <SessionView />
   if (detailView) {
     const inst = instances.get(detailView)
-    if (inst) return (
-      <SpinnerContext.Provider value={spinnerFrame}>
-        <Box width="100%" height="100%">
-          <DetailView instance={inst} />
-        </Box>
-      </SpinnerContext.Provider>
-    )
+    if (inst) return <DetailView instance={inst} />
   }
 
   return (
     <SpinnerContext.Provider value={spinnerFrame}>
-      <Box 
-        flexDirection="column" 
-        width="100%"
-        height="100%"
-      >
+      <Box flexDirection="column" width="100%" height="100%">
         <Header />
         <Box flexDirection="column" flexGrow={1} overflow="hidden">
           {viewMode === 'grouped' ? <GroupedView /> : <FlatView />}
