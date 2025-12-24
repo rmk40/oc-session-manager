@@ -1,39 +1,44 @@
 // Flat view - all instances in a single list
 
-import React, { useContext } from 'react'
+import React, { useMemo } from 'react'
 import { Box, Text } from 'ink'
-import { useApp } from './AppContext.js'
-import { SpinnerContext } from './App.js'
+import { useAppState } from './AppContext.js'
 import { InstanceRow } from './InstanceRow.js'
 
-export function FlatView(): React.ReactElement {
-  const { state } = useApp()
-  const spinnerFrame = useContext(SpinnerContext)
+export const FlatView = React.memo((): React.ReactElement => {
+  const { instances, selectedIndex, currentTime } = useAppState()
+  const { getEffectiveStatus, isLongRunning, getBusyDuration } = useStatusHelpers()
   
-  // Sort instances by instanceId for stable ordering
-  const sorted = Array.from(state.instances.values())
-    .sort((a, b) => (a.instanceId || '').localeCompare(b.instanceId || ''))
+  const sorted = useMemo(() => {
+    return Array.from(instances.values()).sort((a, b) => (a.instanceId || '').localeCompare(b.instanceId || ''))
+  }, [instances])
 
-  // Empty state
-  if (sorted.length === 0) {
-    return (
-      <Box paddingX={1} paddingY={1}>
-        <Text dimColor>No OpenCode instances detected</Text>
-      </Box>
-    )
-  }
+  if (sorted.length === 0) return (
+    <Box paddingX={1} paddingY={1}>
+      <Text dimColor>No OpenCode instances detected</Text>
+    </Box>
+  )
 
   return (
     <Box flexDirection="column" paddingX={1} overflow="hidden">
-      {sorted.map((inst, idx) => (
-        <InstanceRow
-          key={inst.instanceId}
-          instance={inst}
-          isSelected={state.selectedIndex === idx}
-          spinnerFrame={spinnerFrame}
-          showProject={true}
-        />
-      ))}
+      {sorted.map((inst, idx) => {
+        const status = getEffectiveStatus(inst)
+        const longRunning = isLongRunning(inst)
+        const busyDuration = getBusyDuration(inst)
+
+        return (
+          <InstanceRow
+            key={inst.instanceId}
+            instance={inst}
+            isSelected={selectedIndex === idx}
+            status={status}
+            longRunning={longRunning}
+            busyDuration={busyDuration}
+            currentTime={currentTime}
+            showProject={true}
+          />
+        )
+      })}
     </Box>
   )
-}
+})

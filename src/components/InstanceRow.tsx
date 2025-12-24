@@ -1,8 +1,8 @@
 // Single instance row component
 
-import React from 'react'
+import React, { useContext } from 'react'
 import { Text } from 'ink'
-import { useApp } from './AppContext.js'
+import { SpinnerContext } from './App.js'
 import type { Instance } from '../types.js'
 
 const SPINNER_CHARS = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
@@ -10,23 +10,25 @@ const SPINNER_CHARS = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '
 interface InstanceRowProps {
   instance: Instance
   isSelected: boolean
-  spinnerFrame: number
+  status: 'idle' | 'busy' | 'stale'
+  longRunning: boolean
+  busyDuration: number
+  currentTime: number
   indent?: number
   showProject?: boolean
 }
 
-export function InstanceRow({ 
+export const InstanceRow = React.memo(({ 
   instance, 
   isSelected, 
-  spinnerFrame, 
+  status,
+  longRunning,
+  busyDuration,
+  currentTime,
   indent = 0,
   showProject = false 
-}: InstanceRowProps): React.ReactElement {
-  const { actions } = useApp()
-  
-  const status = actions.getEffectiveStatus(instance)
-  const longRunning = actions.isLongRunning(instance)
-  const busyDuration = actions.getBusyDuration(instance)
+}: InstanceRowProps): React.ReactElement => {
+  const spinnerFrame = useContext(SpinnerContext)
   
   // Status indicator
   let statusIcon: string
@@ -46,23 +48,16 @@ export function InstanceRow({
       statusColor = 'gray'
   }
   
-  // Short session ID
   const shortSession = instance.sessionID?.slice(-4) ?? '----'
-  
-  // Title
   const title = instance.title ?? (status === 'idle' ? 'Ready for input' : 'Working...')
   const truncatedTitle = title.length > 40 ? title.slice(0, 37) + '...' : title
-  
-  // Cost and tokens
   const costStr = formatCost(instance.cost)
   const tokStr = formatTokens(instance.tokens?.total)
   
-  // Time
   const timeStr = status === 'busy' 
     ? formatDuration(busyDuration)
-    : formatRelativeTime(instance.ts)
+    : formatRelativeTime(instance.ts, currentTime)
   
-  // Project:branch for flat view
   const prefix = showProject 
     ? `${instance.dirName || '?'}:${instance.branch || '?'}:` 
     : ''
@@ -78,7 +73,7 @@ export function InstanceRow({
       <Text dimColor>  {timeStr.padStart(8)}</Text>
     </Text>
   )
-}
+})
 
 function formatCost(cost: number | undefined): string {
   if (!cost || cost === 0) return ''
@@ -93,9 +88,8 @@ function formatTokens(tokens: number | undefined): string {
   return `${(tokens / 1000000).toFixed(2)}M`
 }
 
-function formatRelativeTime(ts: number): string {
-  const diff = Date.now() - ts
-  
+function formatRelativeTime(ts: number, currentTime: number): string {
+  const diff = currentTime - ts
   if (diff < 1000) return 'now'
   if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
@@ -107,11 +101,9 @@ function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   if (ms < 60000) return `${Math.floor(ms / 1000)}s`
   if (ms < 3600000) {
-    const mins = Math.floor(ms / 60000)
-    const secs = Math.floor((ms % 60000) / 1000)
+    const mins = Math.floor(ms / 60000); const secs = Math.floor((ms % 60000) / 1000)
     return `${mins}m ${secs}s`
   }
-  const hours = Math.floor(ms / 3600000)
-  const mins = Math.floor((ms % 3600000) / 60000)
+  const hours = Math.floor(ms / 3600000); const mins = Math.floor((ms % 3600000) / 60000)
   return `${hours}h ${mins}m`
 }

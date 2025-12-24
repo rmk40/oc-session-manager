@@ -1,7 +1,7 @@
 // Component exports
 
 export { App } from './App.js'
-export { AppProvider, useApp } from './AppContext.js'
+export { AppProvider, useApp, useAppState, useAppActions } from './AppContext.js'
 export { Header } from './Header.js'
 export { HelpBar } from './HelpBar.js'
 export { GroupedView } from './GroupedView.js'

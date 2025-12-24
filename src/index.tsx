@@ -104,8 +104,8 @@ function startUdpServer(
     const addr = socket.address()
     if (daemon) {
       logDaemon(`Listening on UDP ${addr.address}:${addr.port}`)
-      console.log(`Listening for status updates on UDP ${addr.address}:${addr.port}`)
     }
+    // Note: Don't console.log in TUI mode - it causes full re-renders and flickering
   })
 
   socket.on('error', (err) => {
@@ -127,17 +127,20 @@ function startUdpServer(
 // Wrapper Component for UDP Integration
 // ---------------------------------------------------------------------------
 
+import { useAppActions } from './components/index.js'
+
 function AppWithUdp(): React.ReactElement {
-  const { actions } = useApp()
+  const { setInstance, removeInstance } = useAppActions()
   
   // Start UDP server on mount
+  // setInstance and removeInstance are stable (from useAppActions)
   React.useEffect(() => {
-    const socket = startUdpServer(actions.setInstance, actions.removeInstance)
+    const socket = startUdpServer(setInstance, removeInstance)
     
     return () => {
       socket.close()
     }
-  }, [actions.setInstance, actions.removeInstance])
+  }, [setInstance, removeInstance])
   
   return <App />
 }
@@ -219,7 +222,11 @@ async function main(): Promise<void> {
   const { waitUntilExit } = render(
     <AppProvider>
       <AppWithUdp />
-    </AppProvider>
+    </AppProvider>,
+    {
+      incrementalRendering: true,
+      patchConsole: true
+    }
   )
   
   await waitUntilExit()

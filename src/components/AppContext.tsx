@@ -1,6 +1,6 @@
 // React Context for shared application state
 
-import React, { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
+import React, { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react'
 import type { Instance, ViewMode, Permission, Message, RenderedLine } from '../types.js'
 import { STALE_TIMEOUT_MS, LONG_RUNNING_MS } from '../config.js'
 
@@ -9,18 +9,14 @@ import { STALE_TIMEOUT_MS, LONG_RUNNING_MS } from '../config.js'
 // ---------------------------------------------------------------------------
 
 export interface AppState {
-  // Instance tracking
   instances: Map<string, Instance>
   busySince: Map<string, number>
   idleSince: Map<string, number>
-  
-  // View state
+  currentTime: number
   viewMode: ViewMode
   selectedIndex: number
   collapsedGroups: Set<string>
   detailView: string | null
-  
-  // Session viewer state
   sessionViewActive: boolean
   sessionViewInstance: Instance | null
   sessionViewSessionID: string | null
@@ -40,18 +36,13 @@ export interface AppState {
 }
 
 export interface AppActions {
-  // Instance actions
   setInstance: (id: string, instance: Instance) => void
   removeInstance: (id: string) => void
   clearStaleInstances: () => void
-  
-  // View actions
   setViewMode: (mode: ViewMode) => void
   setSelectedIndex: (idx: number) => void
   toggleCollapsedGroup: (key: string) => void
   setDetailView: (id: string | null) => void
-  
-  // Session view actions
   enterSessionView: (instance: Instance) => void
   exitSessionView: () => void
   setSessionViewScrollOffset: (offset: number) => void
@@ -68,278 +59,197 @@ export interface AppActions {
   setSessionViewSessionTitle: (title: string) => void
   addPermission: (permission: Permission) => void
   removePermission: (id: string) => void
-  
-  // Status helpers
-  getEffectiveStatus: (instance: Instance) => 'idle' | 'busy' | 'stale'
-  isLongRunning: (instance: Instance) => boolean
-  getBusyDuration: (instance: Instance) => number
-}
-
-export interface AppContextValue {
-  state: AppState
-  actions: AppActions
+  tick: (now?: number) => void
 }
 
 // ---------------------------------------------------------------------------
-// Context
+// Contexts
 // ---------------------------------------------------------------------------
 
-const AppContext = createContext<AppContextValue | null>(null)
+const AppStateContext = createContext<AppState | null>(null)
+const AppActionsContext = createContext<AppActions | null>(null)
 
-export function useApp(): AppContextValue {
-  const context = useContext(AppContext)
-  if (!context) {
-    throw new Error('useApp must be used within AppProvider')
-  }
+export function useAppState(): AppState {
+  const context = useContext(AppStateContext)
+  if (!context) throw new Error('useAppState must be used within AppProvider')
   return context
+}
+
+export function useAppActions(): AppActions {
+  const context = useContext(AppActionsContext)
+  if (!context) throw new Error('useAppActions must be used within AppProvider')
+  return context
+}
+
+/**
+ * Status helpers that pull from the current state
+ */
+export function useStatusHelpers() {
+  const { currentTime, busySince } = useAppState()
+  
+  const getEffectiveStatus = useCallback((instance: Instance): 'idle' | 'busy' | 'stale' => {
+    const age = currentTime - instance.ts
+    if (age > STALE_TIMEOUT_MS) return 'stale'
+    if (instance.status === 'shutdown') return 'stale'
+    if (['busy', 'running', 'pending'].includes(instance.status)) return 'busy'
+    return 'idle'
+  }, [currentTime])
+
+  const isLongRunning = useCallback((instance: Instance): boolean => {
+    if (getEffectiveStatus(instance) !== 'busy') return false
+    const busyStart = busySince.get(instance.instanceId)
+    return busyStart ? (currentTime - busyStart > LONG_RUNNING_MS) : false
+  }, [currentTime, getEffectiveStatus, busySince])
+
+  const getBusyDuration = useCallback((instance: Instance): number => {
+    const busyStart = busySince.get(instance.instanceId)
+    return busyStart ? (currentTime - busyStart) : 0
+  }, [currentTime, busySince])
+
+  return { getEffectiveStatus, isLongRunning, getBusyDuration }
+}
+
+// Legacy hook for compatibility
+export function useApp(): { state: AppState; actions: AppActions & ReturnType<typeof useStatusHelpers> } {
+  const state = useAppState()
+  const actions = useAppActions()
+  const helpers = useStatusHelpers()
+  return { state, actions: { ...actions, ...helpers } }
 }
 
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
 
-interface AppProviderProps {
-  children: ReactNode
-}
-
-export function AppProvider({ children }: AppProviderProps): React.ReactElement {
-  // Instance tracking
+export function AppProvider({ children }: { children: ReactNode }): React.ReactElement {
   const [instances, setInstances] = useState<Map<string, Instance>>(new Map())
   const [busySince, setBusySince] = useState<Map<string, number>>(new Map())
   const [idleSince, setIdleSince] = useState<Map<string, number>>(new Map())
-  
-  // View state
-  const [viewMode, setViewMode] = useState<ViewMode>('grouped')
-  const [selectedIndex, setSelectedIndex] = useState(-1)
+  const [currentTime, setCurrentTime] = useState<number>(Date.now())
+  const [viewMode, setViewModeInternal] = useState<ViewMode>('grouped')
+  const [selectedIndex, setSelectedIndexInternal] = useState(-1)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
-  const [detailView, setDetailView] = useState<string | null>(null)
-  
-  // Session viewer state
+  const [detailView, setDetailViewInternal] = useState<string | null>(null)
   const [sessionViewActive, setSessionViewActive] = useState(false)
   const [sessionViewInstance, setSessionViewInstance] = useState<Instance | null>(null)
   const [sessionViewSessionID, setSessionViewSessionID] = useState<string | null>(null)
-  const [sessionViewMessages, setSessionViewMessages] = useState<Message[]>([])
-  const [sessionViewScrollOffset, setSessionViewScrollOffset] = useState(0)
-  const [sessionViewRenderedLines, setSessionViewRenderedLines] = useState<RenderedLine[]>([])
+  const [sessionViewMessages, setSessionViewMessagesInternal] = useState<Message[]>([])
+  const [sessionViewScrollOffset, setSessionViewScrollOffsetInternal] = useState(0)
+  const [sessionViewRenderedLines, setSessionViewRenderedLinesInternal] = useState<RenderedLine[]>([])
   const [sessionViewPendingPermissions, setSessionViewPendingPermissions] = useState<Map<string, Permission>>(new Map())
-  const [sessionViewInputMode, setSessionViewInputMode] = useState(false)
-  const [sessionViewInputBuffer, setSessionViewInputBuffer] = useState('')
-  const [sessionViewConfirmAbort, setSessionViewConfirmAbort] = useState(false)
-  const [sessionViewError, setSessionViewError] = useState<string | null>(null)
-  const [sessionViewConnecting, setSessionViewConnecting] = useState(false)
-  const [sessionViewStatus, setSessionViewStatus] = useState('idle')
-  const [sessionViewSessions, setSessionViewSessions] = useState<any[]>([])
-  const [sessionViewSessionIndex, setSessionViewSessionIndex] = useState(0)
-  const [sessionViewSessionTitle, setSessionViewSessionTitle] = useState('')
+  const [sessionViewInputMode, setSessionViewInputModeInternal] = useState(false)
+  const [sessionViewInputBuffer, setSessionViewInputBufferInternal] = useState('')
+  const [sessionViewConfirmAbort, setSessionViewConfirmAbortInternal] = useState(false)
+  const [sessionViewError, setSessionViewErrorInternal] = useState<string | null>(null)
+  const [sessionViewConnecting, setSessionViewConnectingInternal] = useState(false)
+  const [sessionViewStatus, setSessionViewStatusInternal] = useState('idle')
+  const [sessionViewSessions, setSessionViewSessionsInternal] = useState<any[]>([])
+  const [sessionViewSessionIndex, setSessionViewSessionIndexInternal] = useState(0)
+  const [sessionViewSessionTitle, setSessionViewSessionTitleInternal] = useState('')
 
-  // Status helpers
-  const getEffectiveStatus = useCallback((instance: Instance): 'idle' | 'busy' | 'stale' => {
-    const age = Date.now() - instance.ts
-    if (age > STALE_TIMEOUT_MS) return 'stale'
-    if (instance.status === 'shutdown') return 'stale'
-    if (instance.status === 'busy' || instance.status === 'running' || instance.status === 'pending') {
-      return 'busy'
-    }
-    return 'idle'
-  }, [])
-
-  const isLongRunning = useCallback((instance: Instance): boolean => {
-    const status = getEffectiveStatus(instance)
-    if (status !== 'busy') return false
-    const busyStart = busySince.get(instance.instanceId)
-    if (!busyStart) return false
-    return Date.now() - busyStart > LONG_RUNNING_MS
-  }, [busySince, getEffectiveStatus])
-
-  const getBusyDuration = useCallback((instance: Instance): number => {
-    const busyStart = busySince.get(instance.instanceId)
-    if (!busyStart) return 0
-    return Date.now() - busyStart
-  }, [busySince])
-
-  // Instance actions
+  const tick = useCallback((now?: number) => setCurrentTime(now || Date.now()), [])
   const setInstance = useCallback((id: string, instance: Instance) => {
     setInstances(prev => {
-      const next = new Map(prev)
-      const oldInst = prev.get(id)
-      const oldStatus = oldInst ? getEffectiveStatus(oldInst) : null
-      const newStatus = instance.status
-      
-      next.set(id, instance)
-      
-      // Track busy/idle transitions
-      if (newStatus === 'busy' && oldStatus !== 'busy') {
-        setBusySince(prev => new Map(prev).set(id, Date.now()))
-        setIdleSince(prev => {
-          const next = new Map(prev)
-          next.delete(id)
-          return next
-        })
-      } else if (newStatus === 'idle' && oldStatus !== 'idle') {
-        setIdleSince(prev => new Map(prev).set(id, Date.now()))
-        setBusySince(prev => {
-          const next = new Map(prev)
-          next.delete(id)
-          return next
-        })
+      const next = new Map(prev); const oldInst = prev.get(id);
+      const getStat = (inst: Instance | undefined) => {
+          if (!inst) return null
+          if (Date.now() - inst.ts > STALE_TIMEOUT_MS || inst.status === 'shutdown') return 'stale'
+          return ['busy', 'running', 'pending'].includes(inst.status) ? 'busy' : 'idle'
       }
-      
-      return next
-    })
-  }, [getEffectiveStatus])
-
-  const removeInstance = useCallback((id: string) => {
-    setInstances(prev => {
-      const next = new Map(prev)
-      next.delete(id)
-      return next
-    })
-    setBusySince(prev => {
-      const next = new Map(prev)
-      next.delete(id)
-      return next
-    })
-    setIdleSince(prev => {
-      const next = new Map(prev)
-      next.delete(id)
+      const oldStatus = getStat(oldInst); const newStatus = getStat(instance);
+      next.set(id, instance)
+      if (newStatus === 'busy' && oldStatus !== 'busy') {
+        setBusySince(prevBusy => prevBusy.has(id) ? prevBusy : new Map(prevBusy).set(id, Date.now()))
+        setIdleSince(prevIdle => { if (!prevIdle.has(id)) return prevIdle; const n = new Map(prevIdle); n.delete(id); return n })
+      } else if (newStatus === 'idle' && oldStatus !== 'idle') {
+        setIdleSince(prevIdle => prevIdle.has(id) ? prevIdle : new Map(prevIdle).set(id, Date.now()))
+        setBusySince(prevBusy => { if (!prevBusy.has(id)) return prevBusy; const n = new Map(prevBusy); n.delete(id); return n })
+      }
       return next
     })
   }, [])
-
+  const removeInstance = useCallback((id: string) => {
+    setInstances(prev => { if (!prev.has(id)) return prev; const next = new Map(prev); next.delete(id); return next })
+    setBusySince(prev => { if (!prev.has(id)) return prev; const next = new Map(prev); next.delete(id); return next })
+    setIdleSince(prev => { if (!prev.has(id)) return prev; const next = new Map(prev); next.delete(id); return next })
+  }, [])
   const clearStaleInstances = useCallback(() => {
     setInstances(prev => {
-      const next = new Map(prev)
-      for (const [id, inst] of prev) {
-        if (getEffectiveStatus(inst) === 'stale') {
-          next.delete(id)
-        }
-      }
-      return next
+      const next = new Map(prev); let changed = false; const now = Date.now()
+      for (const [id, inst] of prev) { if (now - inst.ts > STALE_TIMEOUT_MS || inst.status === 'shutdown') { next.delete(id); changed = true } }
+      return changed ? next : prev
     })
-  }, [getEffectiveStatus])
-
-  // View actions
+  }, [])
+  const setViewMode = useCallback((mode: ViewMode) => setViewModeInternal(mode), [])
+  const setSelectedIndex = useCallback((idx: number) => setSelectedIndexInternal(idx), [])
   const toggleCollapsedGroup = useCallback((key: string) => {
-    setCollapsedGroups(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) {
-        next.delete(key)
-      } else {
-        next.add(key)
-      }
-      return next
-    })
+    setCollapsedGroups(prev => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next })
   }, [])
-
-  // Session view actions
+  const setDetailView = useCallback((id: string | null) => setDetailViewInternal(id), [])
   const enterSessionView = useCallback((instance: Instance) => {
-    setSessionViewActive(true)
-    setSessionViewInstance(instance)
-    setSessionViewSessionID(instance.sessionID || null)
-    setSessionViewConnecting(true)
-    setSessionViewMessages([])
-    setSessionViewScrollOffset(0)
-    setSessionViewRenderedLines([])
-    setSessionViewPendingPermissions(new Map())
-    setSessionViewInputMode(false)
-    setSessionViewInputBuffer('')
-    setSessionViewConfirmAbort(false)
-    setSessionViewError(null)
-    setSessionViewStatus(String(instance.status || 'idle'))
-    setSessionViewSessions([])
-    setSessionViewSessionIndex(0)
-    setSessionViewSessionTitle('')
+    setSessionViewActive(true); setSessionViewInstance(instance); setSessionViewSessionID(instance.sessionID || null); setSessionViewConnectingInternal(true)
+    setSessionViewMessagesInternal([]); setSessionViewScrollOffsetInternal(0); setSessionViewRenderedLinesInternal([]); setSessionViewPendingPermissions(new Map())
+    setSessionViewInputModeInternal(false); setSessionViewInputBufferInternal(''); setSessionViewConfirmAbortInternal(false); setSessionViewErrorInternal(null)
+    setSessionViewStatusInternal(String(instance.status || 'idle')); setSessionViewSessionsInternal([]); setSessionViewSessionIndexInternal(0); setSessionViewSessionTitleInternal('')
   }, [])
-
   const exitSessionView = useCallback(() => {
-    setSessionViewActive(false)
-    setSessionViewInstance(null)
-    setSessionViewSessionID(null)
-    setSessionViewConnecting(false)
-    setSessionViewMessages([])
-    setSessionViewScrollOffset(0)
-    setSessionViewRenderedLines([])
-    setSessionViewPendingPermissions(new Map())
-    setSessionViewInputMode(false)
-    setSessionViewInputBuffer('')
-    setSessionViewConfirmAbort(false)
-    setSessionViewError(null)
-    setSessionViewStatus('idle')
-    setSessionViewSessions([])
-    setSessionViewSessionIndex(0)
-    setSessionViewSessionTitle('')
+    setSessionViewActive(false); setSessionViewInstance(null); setSessionViewSessionID(null); setSessionViewConnectingInternal(false)
+    setSessionViewMessagesInternal([]); setSessionViewScrollOffsetInternal(0); setSessionViewRenderedLinesInternal([]); setSessionViewPendingPermissions(new Map())
+    setSessionViewInputModeInternal(false); setSessionViewInputBufferInternal(''); setSessionViewConfirmAbortInternal(false); setSessionViewErrorInternal(null)
+    setSessionViewStatusInternal('idle'); setSessionViewSessionsInternal([]); setSessionViewSessionIndexInternal(0); setSessionViewSessionTitleInternal('')
   }, [])
-
+  const setSessionViewScrollOffset = useCallback((offset: number) => setSessionViewScrollOffsetInternal(offset), [])
+  const setSessionViewInputMode = useCallback((mode: boolean) => setSessionViewInputModeInternal(mode), [])
+  const setSessionViewInputBuffer = useCallback((buffer: string) => setSessionViewInputBufferInternal(buffer), [])
+  const setSessionViewConfirmAbort = useCallback((confirm: boolean) => setSessionViewConfirmAbortInternal(confirm), [])
+  const setSessionViewError = useCallback((error: string | null) => setSessionViewErrorInternal(error), [])
+  const setSessionViewConnecting = useCallback((connecting: boolean) => setSessionViewConnectingInternal(connecting), [])
+  const setSessionViewStatus = useCallback((status: string) => setSessionViewStatusInternal(status), [])
+  const setSessionViewMessages = useCallback((messages: Message[]) => setSessionViewMessagesInternal(messages), [])
+  const setSessionViewRenderedLines = useCallback((lines: RenderedLine[]) => setSessionViewRenderedLinesInternal(lines), [])
+  const setSessionViewSessions = useCallback((sessions: any[]) => setSessionViewSessionsInternal(sessions), [])
+  const setSessionViewSessionIndex = useCallback((idx: number) => setSessionViewSessionIndexInternal(idx), [])
+  const setSessionViewSessionTitle = useCallback((title: string) => setSessionViewSessionTitleInternal(title), [])
   const addPermission = useCallback((permission: Permission) => {
     setSessionViewPendingPermissions(prev => new Map(prev).set(permission.id, permission))
   }, [])
-
   const removePermission = useCallback((id: string) => {
-    setSessionViewPendingPermissions(prev => {
-      const next = new Map(prev)
-      next.delete(id)
-      return next
-    })
+    setSessionViewPendingPermissions(prev => { if (!prev.has(id)) return prev; const next = new Map(prev); next.delete(id); return next })
   }, [])
 
-  const state: AppState = {
-    instances,
-    busySince,
-    idleSince,
-    viewMode,
-    selectedIndex,
-    collapsedGroups,
-    detailView,
-    sessionViewActive,
-    sessionViewInstance,
-    sessionViewSessionID,
-    sessionViewMessages,
-    sessionViewScrollOffset,
-    sessionViewRenderedLines,
-    sessionViewPendingPermissions,
-    sessionViewInputMode,
-    sessionViewInputBuffer,
-    sessionViewConfirmAbort,
-    sessionViewError,
-    sessionViewConnecting,
-    sessionViewStatus,
-    sessionViewSessions,
-    sessionViewSessionIndex,
-    sessionViewSessionTitle,
-  }
+  const actions = useMemo<AppActions>(() => ({
+    setInstance, removeInstance, clearStaleInstances, setViewMode, setSelectedIndex, toggleCollapsedGroup, setDetailView,
+    enterSessionView, exitSessionView, setSessionViewScrollOffset, setSessionViewInputMode, setSessionViewInputBuffer,
+    setSessionViewConfirmAbort, setSessionViewError, setSessionViewConnecting, setSessionViewStatus, setSessionViewMessages,
+    setSessionViewRenderedLines, setSessionViewSessions, setSessionViewSessionIndex, setSessionViewSessionTitle,
+    addPermission, removePermission, tick
+  }), [
+    setInstance, removeInstance, clearStaleInstances, setViewMode, setSelectedIndex, toggleCollapsedGroup, setDetailView,
+    enterSessionView, exitSessionView, setSessionViewScrollOffset, setSessionViewInputMode, setSessionViewInputBuffer,
+    setSessionViewConfirmAbort, setSessionViewError, setSessionViewConnecting, setSessionViewStatus, setSessionViewMessages,
+    setSessionViewRenderedLines, setSessionViewSessions, setSessionViewSessionIndex, setSessionViewSessionTitle,
+    addPermission, removePermission, tick
+  ])
 
-  const actions: AppActions = {
-    setInstance,
-    removeInstance,
-    clearStaleInstances,
-    setViewMode,
-    setSelectedIndex,
-    toggleCollapsedGroup,
-    setDetailView,
-    enterSessionView,
-    exitSessionView,
-    setSessionViewScrollOffset,
-    setSessionViewInputMode,
-    setSessionViewInputBuffer,
-    setSessionViewConfirmAbort,
-    setSessionViewError,
-    setSessionViewConnecting,
-    setSessionViewStatus,
-    setSessionViewMessages,
-    setSessionViewRenderedLines,
-    setSessionViewSessions,
-    setSessionViewSessionIndex,
-    setSessionViewSessionTitle,
-    addPermission,
-    removePermission,
-    getEffectiveStatus,
-    isLongRunning,
-    getBusyDuration,
-  }
+  const state = useMemo<AppState>(() => ({
+    instances, busySince, idleSince, currentTime, viewMode, selectedIndex, collapsedGroups, detailView,
+    sessionViewActive, sessionViewInstance, sessionViewSessionID, sessionViewMessages, sessionViewScrollOffset,
+    sessionViewRenderedLines, sessionViewPendingPermissions, sessionViewInputMode, sessionViewInputBuffer,
+    sessionViewConfirmAbort, sessionViewError, sessionViewConnecting, sessionViewStatus, sessionViewSessions,
+    sessionViewSessionIndex, sessionViewSessionTitle
+  }), [
+    instances, busySince, idleSince, currentTime, viewMode, selectedIndex, collapsedGroups, detailView,
+    sessionViewActive, sessionViewInstance, sessionViewSessionID, sessionViewMessages, sessionViewScrollOffset,
+    sessionViewRenderedLines, sessionViewPendingPermissions, sessionViewInputMode, sessionViewInputBuffer,
+    sessionViewConfirmAbort, sessionViewError, sessionViewConnecting, sessionViewStatus, sessionViewSessions,
+    sessionViewSessionIndex, sessionViewSessionTitle
+  ])
 
   return (
-    <AppContext.Provider value={{ state, actions }}>
-      {children}
-    </AppContext.Provider>
+    <AppActionsContext.Provider value={actions}>
+      <AppStateContext.Provider value={state}>
+        {children}
+      </AppStateContext.Provider>
+    </AppActionsContext.Provider>
   )
 }

@@ -2,18 +2,25 @@
 
 import React from 'react'
 import { Box, Text } from 'ink'
-import { useApp } from './AppContext.js'
+import { useAppState } from './AppContext.js'
 
-export function HelpBar(): React.ReactElement {
-  const { state } = useApp()
+export const HelpBar = React.memo((): React.ReactElement => {
+  const { viewMode } = useAppState()
   
-  const viewToggle = state.viewMode === 'grouped' ? 'flat' : 'grouped'
+  const viewToggle = viewMode === 'grouped' ? 'flat' : 'grouped'
   
   return (
-    <Box paddingX={1} borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false}>
+    <Box 
+      paddingX={1} 
+      borderStyle="single" 
+      borderTop 
+      borderBottom={false} 
+      borderLeft={false} 
+      borderRight={false}
+    >
       <Text dimColor>
         q: quit  ↑↓/jk: nav  Enter: watch  i: info  d: remove  c: clear stale  Tab: {viewToggle}
       </Text>
     </Box>
   )
-}
+})
