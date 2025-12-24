@@ -32,18 +32,7 @@ import { exec } from 'node:child_process'
 import { platform } from 'node:os'
 import type { Instance } from './types.js'
 
-// SDK import - dynamically loaded
-let createOpencodeClient: any = null
-
-async function initSdk(): Promise<boolean> {
-  try {
-    const sdk = await import('@opencode-ai/sdk')
-    createOpencodeClient = sdk.createOpencodeClient
-    return true
-  } catch {
-    return false
-  }
-}
+import { initSdk } from './sdk.js'
 
 // ---------------------------------------------------------------------------
 // CLI Argument Parsing

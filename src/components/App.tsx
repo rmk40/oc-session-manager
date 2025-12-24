@@ -1,7 +1,7 @@
 // Main App component - Full-screen TUI using Ink best practices
 
 import React, { useState, useEffect, useMemo } from 'react'
-import { Box, useApp as useInkApp, useInput } from 'ink'
+import { Box, useApp as useInkApp, useInput, useStdout } from 'ink'
 import { useAppState, useAppActions, useViewState, useStatusHelpers } from './AppContext.js'
 import { Header } from './Header.js'
 import { GroupedView } from './GroupedView.js'
@@ -9,6 +9,7 @@ import { FlatView } from './FlatView.js'
 import { DetailView } from './DetailView.js'
 import { SessionView } from './SessionView.js'
 import { HelpBar } from './HelpBar.js'
+import { SessionWatcher } from './SessionWatcher.js'
 import type { Instance } from '../types.js'
 
 // Spinner context to share frame across components
@@ -16,6 +17,7 @@ export const SpinnerContext = React.createContext(0)
 
 export function App(): React.ReactElement {
   const { exit } = useInkApp()
+  const { stdout } = useStdout()
   const { instances } = useAppState()
   const { viewMode, selectedIndex, collapsedGroups, detailView, sessionViewActive, terminalSize } = useViewState()
   const actions = useAppActions()
@@ -171,10 +173,18 @@ export function App(): React.ReactElement {
     return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b))
   }
 
+  // Calculate if we should show split view
+  const isSplitView = terminalSize.columns > 140
+  const selectedItem = getSelectedItem()
+  const selectedInstance = (selectedItem?.type === 'instance' && selectedItem.instanceId) 
+    ? instances.get(selectedItem.instanceId) 
+    : null
+
   // Views
   if (sessionViewActive) {
     return (
       <SpinnerContext.Provider value={spinnerFrame}>
+        <SessionWatcher />
         <Box 
           width={terminalSize.columns} 
           height={terminalSize.rows}
@@ -203,15 +213,9 @@ export function App(): React.ReactElement {
     )
   }
 
-  // Calculate if we should show split view
-  const isSplitView = terminalSize.columns > 140
-  const selectedItem = getSelectedItem()
-  const selectedInstance = (selectedItem?.type === 'instance' && selectedItem.instanceId) 
-    ? instances.get(selectedItem.instanceId) 
-    : null
-
   return (
     <SpinnerContext.Provider value={spinnerFrame}>
+      <SessionWatcher />
       <Box 
         flexDirection="column" 
         width={terminalSize.columns}
