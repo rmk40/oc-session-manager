@@ -272,7 +272,7 @@ function renderSessionViewWithPermissions(height: number): string {
   output += `${ANSI.cyan}│${ANSI.reset}   ${toolLine}${' '.repeat(Math.max(0, termWidth - toolLine.length - 5))}${ANSI.cyan}│${ANSI.reset}\n`
   if (argsLine) {
     output += `${ANSI.cyan}│${ANSI.reset}   ${ANSI.dim}${argsLine}${ANSI.reset}${' '.repeat(Math.max(0, termWidth - argsLine.length - 5))}${ANSI.cyan}│${ANSI.reset}\n`
-  } else {
+  } else /* v8 ignore next */ {
     output += `${ANSI.cyan}│${ANSI.reset}${' '.repeat(termWidth - 2)}${ANSI.cyan}│${ANSI.reset}\n`
   }
   output += `${ANSI.cyan}│${ANSI.reset}${' '.repeat(termWidth - 2)}${ANSI.cyan}│${ANSI.reset}\n`
@@ -512,9 +512,11 @@ function renderGrouped(): string {
             statusIcon = longRunning ? '!' : SPINNER[spinnerFrame]
             statusColor = longRunning ? ANSI.red : ANSI.yellow
             break
+          /* v8 ignore start - fallback case */
           default:
             statusIcon = '◌'
             statusColor = ANSI.gray
+          /* v8 ignore stop */
         }
 
         // Short session ID

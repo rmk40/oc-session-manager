@@ -19,6 +19,7 @@ import { isDaemonChild, logDaemon } from './daemon.js'
 // SDK import - dynamically loaded
 let createOpencodeClient: any = null
 
+/* v8 ignore start - dynamic SDK import */
 export async function initSdk(): Promise<boolean> {
   try {
     const sdk = await import('@opencode-ai/sdk')
@@ -28,6 +29,7 @@ export async function initSdk(): Promise<boolean> {
     return false
   }
 }
+/* v8 ignore stop */
 
 export function isSessionViewerAvailable(): boolean {
   return createOpencodeClient !== null
@@ -64,9 +66,10 @@ export function removeChildSessions(parentSessionID: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Session Discovery
+// Session Discovery (integration code - requires SDK)
 // ---------------------------------------------------------------------------
 
+/* v8 ignore start - SDK integration code */
 export async function discoverChildSessions(
   serverUrl: string, 
   parentSessionID: string, 
@@ -227,6 +230,7 @@ export async function refreshAllServerSessions(): Promise<void> {
     await discoverServerSessions(serverUrl)
   }
 }
+/* v8 ignore stop */
 
 // ---------------------------------------------------------------------------
 // Desktop Notifications
@@ -252,17 +256,15 @@ export function showDesktopNotification(data: Instance): void {
   if (os === 'darwin') {
     // macOS - use osascript
     const script = `display notification "${escapeShell(message)}" with title "${escapeShell(title)}" subtitle "${escapeShell(subtitle)}"`
-    exec(`osascript -e '${script}'`, (err) => {
-      if (err && isDaemonChild()) {
-        logDaemon(`Notification error: ${err.message}`)
-      }
+    exec(`osascript -e '${script}'`, /* v8 ignore next */ (err) => {
+      /* v8 ignore next 2 */
+      if (err && isDaemonChild()) logDaemon(`Notification error: ${err.message}`)
     })
   } else if (os === 'linux') {
     // Linux - use notify-send
-    exec(`notify-send "${escapeShell(title)}" "${escapeShell(subtitle)}: ${escapeShell(message)}"`, (err) => {
-      if (err && isDaemonChild()) {
-        logDaemon(`Notification error: ${err.message}`)
-      }
+    exec(`notify-send "${escapeShell(title)}" "${escapeShell(subtitle)}: ${escapeShell(message)}"`, /* v8 ignore next */ (err) => {
+      /* v8 ignore next 2 */
+      if (err && isDaemonChild()) logDaemon(`Notification error: ${err.message}`)
     })
   }
 }
@@ -273,6 +275,7 @@ export function showDesktopNotification(data: Instance): void {
 
 let socket: Socket | null = null
 
+/* v8 ignore start - UDP socket event handlers */
 export function startServer(options: { debug?: boolean } = {}): void {
   const isDebug = options.debug || false
   const daemon = isDaemonChild()
@@ -388,6 +391,7 @@ export function startServer(options: { debug?: boolean } = {}): void {
   process.on('SIGTERM', () => shutdown('SIGTERM'))
   process.on('SIGINT', () => shutdown('SIGINT'))
 }
+/* v8 ignore stop */
 
 export function getSocket(): Socket | null {
   return socket

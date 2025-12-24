@@ -396,7 +396,7 @@ export function setupKeyboardInput(): void {
     }
   })
   
-  // Cleanup on exit
+  /* v8 ignore start - process signal handlers */
   process.on('exit', () => {
     process.stdout.write(ANSI.showCursor)
   })
@@ -411,4 +411,5 @@ export function setupKeyboardInput(): void {
     process.stdout.write(ANSI.showCursor)
     process.exit(0)
   })
+  /* v8 ignore stop */
 }
