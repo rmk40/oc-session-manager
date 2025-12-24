@@ -1,43 +1,43 @@
 // UDP server, session discovery, and desktop notifications
 
-import { createSocket, Socket } from 'node:dgram'
-import { exec } from 'node:child_process'
-import { platform } from 'node:os'
-import { PORT, NOTIFY_ENABLED } from './config.js'
-import { 
-  instances, 
-  busySince, 
-  idleSince, 
+import { createSocket, Socket } from "node:dgram";
+import { exec } from "node:child_process";
+import { platform } from "node:os";
+import { PORT, NOTIFY_ENABLED } from "./config.js";
+import {
+  instances,
+  busySince,
+  idleSince,
   serverConnections,
-  sessionViewActive
-} from './state.js'
-import type { Instance, ServerConnection } from './types.js'
-import { getEffectiveStatus, escapeShell } from './utils.js'
-import { render } from './render.js'
-import { isDaemonChild, logDaemon } from './daemon.js'
+  sessionViewActive,
+} from "./state.js";
+import type { Instance, ServerConnection } from "./types.js";
+import { getEffectiveStatus, escapeShell } from "./utils.js";
+import { render } from "./render.js";
+import { isDaemonChild, logDaemon } from "./daemon.js";
 
 // SDK import - dynamically loaded
-let createOpencodeClient: any = null
+let createOpencodeClient: any = null;
 
 /* v8 ignore start - dynamic SDK import */
 export async function initSdk(): Promise<boolean> {
   try {
-    const sdk = await import('@opencode-ai/sdk')
-    createOpencodeClient = sdk.createOpencodeClient
-    return true
+    const sdk = await import("@opencode-ai/sdk");
+    createOpencodeClient = sdk.createOpencodeClient;
+    return true;
   } catch {
-    return false
+    return false;
   }
 }
 /* v8 ignore stop */
 
 export function isSessionViewerAvailable(): boolean {
-  return createOpencodeClient !== null
+  return createOpencodeClient !== null;
 }
 
 export function getOpencodeClient(baseUrl: string): any {
-  if (!createOpencodeClient) return null
-  return createOpencodeClient({ baseUrl })
+  if (!createOpencodeClient) return null;
+  return createOpencodeClient({ baseUrl });
 }
 
 // ---------------------------------------------------------------------------
@@ -45,23 +45,23 @@ export function getOpencodeClient(baseUrl: string): any {
 // ---------------------------------------------------------------------------
 
 export function removeChildSessions(parentSessionID: string): void {
-  if (!parentSessionID) return
-  
-  const toRemove: string[] = []
+  if (!parentSessionID) return;
+
+  const toRemove: string[] = [];
   for (const [id, inst] of instances) {
     if (inst._isChildSession && inst.parentID === parentSessionID) {
-      toRemove.push(id)
+      toRemove.push(id);
       // Recursively find children of this child
       if (inst.sessionID) {
-        removeChildSessions(inst.sessionID)
+        removeChildSessions(inst.sessionID);
       }
     }
   }
-  
+
   for (const id of toRemove) {
-    instances.delete(id)
-    busySince.delete(id)
-    idleSince.delete(id)
+    instances.delete(id);
+    busySince.delete(id);
+    idleSince.delete(id);
   }
 }
 
@@ -71,62 +71,62 @@ export function removeChildSessions(parentSessionID: string): void {
 
 /* v8 ignore start - SDK integration code */
 export async function discoverChildSessions(
-  serverUrl: string, 
-  parentSessionID: string, 
-  baseInstance: Instance
+  serverUrl: string,
+  parentSessionID: string,
+  baseInstance: Instance,
 ): Promise<void> {
-  if (!isSessionViewerAvailable() || !serverUrl || !parentSessionID) return
-  
-  let conn = serverConnections.get(serverUrl)
-  
+  if (!isSessionViewerAvailable() || !serverUrl || !parentSessionID) return;
+
+  let conn = serverConnections.get(serverUrl);
+
   // Create client if not exists
   if (!conn) {
     try {
-      const client = getOpencodeClient(serverUrl)
-      conn = { client, sessions: [], lastFetch: 0, error: null }
-      serverConnections.set(serverUrl, conn)
+      const client = getOpencodeClient(serverUrl);
+      conn = { client, sessions: [], lastFetch: 0, error: null };
+      serverConnections.set(serverUrl, conn);
     } catch {
-      return
+      return;
     }
   }
-  
+
   try {
     // Fetch only children of this specific session
     const childrenResp = await conn.client.session.children({
-      path: { id: parentSessionID }
-    })
-    const children = childrenResp.data || []
-    
-    if (children.length === 0) return
-    
+      path: { id: parentSessionID },
+    });
+    const children = childrenResp.data || [];
+
+    if (children.length === 0) return;
+
     // Get status for all sessions
-    let statusMap: Record<string, string> = {}
+    let statusMap: Record<string, string> = {};
     try {
-      const statusResp = await conn.client.session.status()
-      statusMap = statusResp.data || {}
+      const statusResp = await conn.client.session.status();
+      statusMap = statusResp.data || {};
     } catch {
       // Status endpoint may not exist in older versions
     }
-    
+
     // Add child sessions as instances
     for (const child of children) {
-      const childStatus = statusMap[child.id] || 'idle'
-      const childInstanceId = `${serverUrl}-${child.id}`
-      
+      const childStatus = statusMap[child.id] || "idle";
+      const childInstanceId = `${serverUrl}-${child.id}`;
+
       // Only add if not already exists or update if it does
-      const existing = instances.get(childInstanceId)
+      const existing = instances.get(childInstanceId);
       if (existing) {
         // Update existing
-        existing.title = child.title || existing.title
-        existing.status = String(childStatus)
-        existing.ts = Date.now()
+        existing.title = child.title || existing.title;
+        existing.status = String(childStatus);
+        existing.ts = Date.now();
       } else {
         // Create new instance for child session
         instances.set(childInstanceId, {
           instanceId: childInstanceId,
           sessionID: child.id,
           parentID: parentSessionID,
-          title: child.title || 'Subagent',
+          title: child.title || "Subagent",
           status: String(childStatus),
           ts: Date.now(),
           serverUrl: baseInstance.serverUrl,
@@ -137,59 +137,60 @@ export async function discoverChildSessions(
           branch: baseInstance.branch,
           _fromServer: true,
           _isChildSession: true,
-        })
+        });
       }
-      
+
       // Recursively fetch children of this child
-      await discoverChildSessions(serverUrl, child.id, baseInstance)
+      await discoverChildSessions(serverUrl, child.id, baseInstance);
     }
-    
   } catch {
     // Ignore errors - child session fetch is best effort
   }
 }
 
 export async function discoverServerSessions(serverUrl: string): Promise<void> {
-  if (!isSessionViewerAvailable() || !serverUrl) return
-  
+  if (!isSessionViewerAvailable() || !serverUrl) return;
+
   // Find the base instance for this server
-  let baseInstance: Instance | null = null
+  let baseInstance: Instance | null = null;
   for (const inst of instances.values()) {
     if (inst.serverUrl === serverUrl && !inst._isChildSession) {
-      baseInstance = inst
-      break
+      baseInstance = inst;
+      break;
     }
   }
-  
-  if (!baseInstance) return
-  
+
+  if (!baseInstance) return;
+
   // If the base instance doesn't have a sessionID yet, try to get the current session
   if (!baseInstance.sessionID) {
     try {
-      let conn = serverConnections.get(serverUrl)
+      let conn = serverConnections.get(serverUrl);
       if (!conn) {
-        const client = getOpencodeClient(serverUrl)
-        conn = { client, sessions: [], lastFetch: 0, error: null }
-        serverConnections.set(serverUrl, conn)
+        const client = getOpencodeClient(serverUrl);
+        conn = { client, sessions: [], lastFetch: 0, error: null };
+        serverConnections.set(serverUrl, conn);
       }
-      
+
       // Get status for all sessions to find active ones
-      const statusResp = await conn.client.session.status()
-      const statusMap = statusResp.data || {}
-      
+      const statusResp = await conn.client.session.status();
+      const statusMap = statusResp.data || {};
+
       // Find sessions that are running/busy
       for (const [sessionId, status] of Object.entries(statusMap)) {
-        if (status === 'running' || status === 'pending') {
+        if (status === "running" || status === "pending") {
           // Get session details
           try {
-            const sessionResp = await conn.client.session.get({ path: { id: sessionId } })
-            const session = sessionResp.data
+            const sessionResp = await conn.client.session.get({
+              path: { id: sessionId },
+            });
+            const session = sessionResp.data;
             if (session && !session.parentID) {
               // This is a root session that's active
-              baseInstance.sessionID = sessionId
-              baseInstance.title = session.title || baseInstance.title
-              baseInstance.status = String(status)
-              break
+              baseInstance.sessionID = sessionId;
+              baseInstance.title = session.title || baseInstance.title;
+              baseInstance.status = String(status);
+              break;
             }
           } catch {
             // Ignore
@@ -200,34 +201,38 @@ export async function discoverServerSessions(serverUrl: string): Promise<void> {
       // Ignore errors
     }
   }
-  
+
   // Now fetch children for all parent instances
-  const parentInstances: Instance[] = []
+  const parentInstances: Instance[] = [];
   for (const inst of instances.values()) {
-    if (inst.serverUrl === serverUrl && inst.sessionID && !inst._isChildSession) {
-      parentInstances.push(inst)
+    if (
+      inst.serverUrl === serverUrl &&
+      inst.sessionID &&
+      !inst._isChildSession
+    ) {
+      parentInstances.push(inst);
     }
   }
-  
+
   for (const parent of parentInstances) {
-    await discoverChildSessions(serverUrl, parent.sessionID!, parent)
+    await discoverChildSessions(serverUrl, parent.sessionID!, parent);
   }
 }
 
 export async function refreshAllServerSessions(): Promise<void> {
-  if (!isSessionViewerAvailable()) return
-  
+  if (!isSessionViewerAvailable()) return;
+
   // Get unique server URLs from instances
-  const serverUrls = new Set<string>()
+  const serverUrls = new Set<string>();
   for (const inst of instances.values()) {
     if (inst.serverUrl) {
-      serverUrls.add(inst.serverUrl)
+      serverUrls.add(inst.serverUrl);
     }
   }
-  
+
   // Fetch sessions from each server
   for (const serverUrl of serverUrls) {
-    await discoverServerSessions(serverUrl)
+    await discoverServerSessions(serverUrl);
   }
 }
 /* v8 ignore stop */
@@ -236,36 +241,49 @@ export async function refreshAllServerSessions(): Promise<void> {
 // Desktop Notifications
 // ---------------------------------------------------------------------------
 
-function isBusyToIdleTransition(instanceId: string, newStatus: string): boolean {
-  const oldInst = instances.get(instanceId)
-  if (!oldInst) return false
-  const oldStatus = getEffectiveStatus(oldInst)
-  return oldStatus === 'busy' && (newStatus === 'idle' || newStatus === 'shutdown')
+function isBusyToIdleTransition(
+  instanceId: string,
+  newStatus: string,
+): boolean {
+  const oldInst = instances.get(instanceId);
+  if (!oldInst) return false;
+  const oldStatus = getEffectiveStatus(oldInst);
+  return (
+    oldStatus === "busy" && (newStatus === "idle" || newStatus === "shutdown")
+  );
 }
 
 export function showDesktopNotification(data: Instance): void {
-  if (!NOTIFY_ENABLED) return
-  if (!isBusyToIdleTransition(data.instanceId, data.status)) return
-  
-  const title = 'OpenCode'
-  const subtitle = `${data.project || data.dirName || 'Session'}:${data.branch || 'main'}`
-  const message = data.title || 'Session is idle'
-  
-  const os = platform()
-  
-  if (os === 'darwin') {
+  if (!NOTIFY_ENABLED) return;
+  if (!isBusyToIdleTransition(data.instanceId, data.status)) return;
+
+  const title = "OpenCode";
+  const subtitle = `${data.project || data.dirName || "Session"}:${data.branch || "main"}`;
+  const message = data.title || "Session is idle";
+
+  const os = platform();
+
+  if (os === "darwin") {
     // macOS - use osascript
-    const script = `display notification "${escapeShell(message)}" with title "${escapeShell(title)}" subtitle "${escapeShell(subtitle)}"`
-    exec(`osascript -e '${script}'`, /* v8 ignore next */ (err) => {
-      /* v8 ignore next 2 */
-      if (err && isDaemonChild()) logDaemon(`Notification error: ${err.message}`)
-    })
-  } else if (os === 'linux') {
+    const script = `display notification "${escapeShell(message)}" with title "${escapeShell(title)}" subtitle "${escapeShell(subtitle)}"`;
+    exec(
+      `osascript -e '${script}'`,
+      /* v8 ignore next */ (err) => {
+        /* v8 ignore next 2 */
+        if (err && isDaemonChild())
+          logDaemon(`Notification error: ${err.message}`);
+      },
+    );
+  } else if (os === "linux") {
     // Linux - use notify-send
-    exec(`notify-send "${escapeShell(title)}" "${escapeShell(subtitle)}: ${escapeShell(message)}"`, /* v8 ignore next */ (err) => {
-      /* v8 ignore next 2 */
-      if (err && isDaemonChild()) logDaemon(`Notification error: ${err.message}`)
-    })
+    exec(
+      `notify-send "${escapeShell(title)}" "${escapeShell(subtitle)}: ${escapeShell(message)}"`,
+      /* v8 ignore next */ (err) => {
+        /* v8 ignore next 2 */
+        if (err && isDaemonChild())
+          logDaemon(`Notification error: ${err.message}`);
+      },
+    );
   }
 }
 
@@ -273,126 +291,144 @@ export function showDesktopNotification(data: Instance): void {
 // UDP Server
 // ---------------------------------------------------------------------------
 
-let socket: Socket | null = null
+let socket: Socket | null = null;
 
 /* v8 ignore start - UDP socket event handlers */
 export function startServer(options: { debug?: boolean } = {}): void {
-  const isDebug = options.debug || false
-  const daemon = isDaemonChild()
-  
-  socket = createSocket({ type: 'udp4', reuseAddr: true })
+  const isDebug = options.debug || false;
+  const daemon = isDaemonChild();
 
-  socket.on('message', (msg, rinfo) => {
+  socket = createSocket({ type: "udp4", reuseAddr: true });
+
+  socket.on("message", (msg, rinfo) => {
     try {
-      const data = JSON.parse(msg.toString()) as Instance & { type: string }
+      const data = JSON.parse(msg.toString()) as Instance & { type: string };
 
       if (isDebug) {
-        console.log(`[DEBUG] Received from ${rinfo.address}:${rinfo.port}:`)
-        console.log(JSON.stringify(data, null, 2))
-        return
+        console.log(`[DEBUG] Received from ${rinfo.address}:${rinfo.port}:`);
+        console.log(JSON.stringify(data, null, 2));
+        return;
       }
 
-      if (data.type === 'oc.status' && data.instanceId) {
-        if (data.status === 'shutdown') {
+      if (data.type === "oc.status" && data.instanceId) {
+        // Use composite key: instanceId + sessionID to differentiate parent from child sessions
+        // Child sessions (sub-agents) share the same process but have different sessionIDs
+        const instanceKey = data.sessionID
+          ? `${data.instanceId}:${data.sessionID}`
+          : data.instanceId;
+
+        // Mark as child session if it has a parentID
+        const isChild = !!data.parentID;
+
+        if (data.status === "shutdown") {
           // Remove this instance and all its child sessions (recursively)
-          const shutdownInst = instances.get(data.instanceId)
+          const shutdownInst = instances.get(instanceKey);
           if (shutdownInst && shutdownInst.sessionID) {
-            removeChildSessions(shutdownInst.sessionID)
+            removeChildSessions(shutdownInst.sessionID);
           }
-          instances.delete(data.instanceId)
-          busySince.delete(data.instanceId)
-          idleSince.delete(data.instanceId)
-          if (!sessionViewActive) render()
-          return
+          instances.delete(instanceKey);
+          busySince.delete(instanceKey);
+          idleSince.delete(instanceKey);
+          if (!sessionViewActive) render();
+          return;
         }
 
         // Track busy/idle start times
-        const oldInst = instances.get(data.instanceId)
-        const oldStatus = oldInst ? getEffectiveStatus(oldInst) : null
-        const newStatus = data.status
-        
+        const oldInst = instances.get(instanceKey);
+        const oldStatus = oldInst ? getEffectiveStatus(oldInst) : null;
+        const newStatus = data.status;
+
         // Track when instance became busy or idle
-        if (newStatus === 'busy') {
-          if (oldStatus !== 'busy') {
-            busySince.set(data.instanceId, Date.now())
+        if (newStatus === "busy") {
+          if (oldStatus !== "busy") {
+            busySince.set(instanceKey, Date.now());
           }
-          idleSince.delete(data.instanceId)
-        } else if (newStatus === 'idle') {
-          if (oldStatus !== 'idle') {
-            idleSince.set(data.instanceId, Date.now())
+          idleSince.delete(instanceKey);
+        } else if (newStatus === "idle") {
+          if (oldStatus !== "idle") {
+            idleSince.set(instanceKey, Date.now());
           }
-          busySince.delete(data.instanceId)
+          busySince.delete(instanceKey);
         } else {
           // shutdown or other status - clear both
-          busySince.delete(data.instanceId)
-          idleSince.delete(data.instanceId)
+          busySince.delete(instanceKey);
+          idleSince.delete(instanceKey);
         }
-        
+
         // Check for busy->idle transition BEFORE updating instance
-        showDesktopNotification(data)
-        
+        showDesktopNotification(data);
+
         // Check if session changed - if so, remove old child sessions
-        if (oldInst && oldInst.sessionID && data.sessionID && oldInst.sessionID !== data.sessionID) {
+        if (
+          oldInst &&
+          oldInst.sessionID &&
+          data.sessionID &&
+          oldInst.sessionID !== data.sessionID
+        ) {
           // Session changed - remove all child sessions from the old session (recursively)
-          removeChildSessions(oldInst.sessionID)
+          removeChildSessions(oldInst.sessionID);
         }
-        
-        // Update instance tracking
-        instances.set(data.instanceId, {
+
+        // Update instance tracking with composite key
+        instances.set(instanceKey, {
           ...data,
+          instanceId: instanceKey, // Use composite key as instanceId for consistency
           ts: data.ts || Date.now(),
-        })
-        
+          _isChildSession: isChild,
+        });
+
         // Trigger session discovery from this server
         if (data.serverUrl && isSessionViewerAvailable()) {
-          discoverServerSessions(data.serverUrl)
+          discoverServerSessions(data.serverUrl);
         }
-        
-        if (!sessionViewActive) render()
+
+        if (!sessionViewActive) render();
       }
     } catch (err: any) {
       if (daemon) {
-        logDaemon(`Parse error: ${err.message}`)
+        logDaemon(`Parse error: ${err.message}`);
       } else if (!isDebug) {
         // Only log errors in non-debug TUI mode
       }
     }
-  })
+  });
 
-  socket.on('listening', () => {
-    const addr = socket!.address()
+  socket.on("listening", () => {
+    const addr = socket!.address();
     if (daemon) {
-      logDaemon(`Listening on UDP ${addr.address}:${addr.port}`)
-      console.log(`Listening for status updates on UDP ${addr.address}:${addr.port}`)
+      logDaemon(`Listening on UDP ${addr.address}:${addr.port}`);
+      console.log(
+        `Listening for status updates on UDP ${addr.address}:${addr.port}`,
+      );
     }
-  })
+  });
 
-  socket.on('error', (err) => {
+  socket.on("error", (err) => {
     if (daemon) {
-      logDaemon(`Socket error: ${err.message}`)
+      logDaemon(`Socket error: ${err.message}`);
     } else {
-      console.error('Socket error:', err.message)
+      console.error("Socket error:", err.message);
     }
-    socket?.close()
-    process.exit(1)
-  })
+    socket?.close();
+    process.exit(1);
+  });
 
-  socket.bind(PORT)
-  
+  socket.bind(PORT);
+
   // Handle shutdown
   const shutdown = (signal: string) => {
     if (daemon) {
-      logDaemon(`Received ${signal}, shutting down`)
+      logDaemon(`Received ${signal}, shutting down`);
     }
-    socket?.close()
-    process.exit(0)
-  }
-  
-  process.on('SIGTERM', () => shutdown('SIGTERM'))
-  process.on('SIGINT', () => shutdown('SIGINT'))
+    socket?.close();
+    process.exit(0);
+  };
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 /* v8 ignore stop */
 
 export function getSocket(): Socket | null {
-  return socket
+  return socket;
 }

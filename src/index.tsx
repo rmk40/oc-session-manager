@@ -14,37 +14,37 @@
 //   OC_SESSION_TIMEOUT     - Seconds before instance considered stale (default: 120)
 //   OC_SESSION_LONG_RUNNING - Minutes before busy instance flagged as long-running (default: 10)
 
-import React from 'react'
-import { render } from 'ink'
-import { App, AppProvider, useApp } from './components/index.js'
-import { PORT } from './config.js'
-import { 
-  checkDaemon, 
-  handleDaemon, 
-  handleStatus, 
-  handleStop, 
+import React from "react";
+import { render } from "ink";
+import { App, AppProvider, useApp } from "./components/index.js";
+import { PORT } from "./config.js";
+import {
+  checkDaemon,
+  handleDaemon,
+  handleStatus,
+  handleStop,
   isDaemonChild,
   initDaemonChild,
-  logDaemon
-} from './daemon.js'
-import { createSocket, type Socket } from 'node:dgram'
-import { exec } from 'node:child_process'
-import { platform } from 'node:os'
-import type { Instance } from './types.js'
+  logDaemon,
+} from "./daemon.js";
+import { createSocket, type Socket } from "node:dgram";
+import { exec } from "node:child_process";
+import { platform } from "node:os";
+import type { Instance } from "./types.js";
 
-import { initSdk } from './sdk.js'
+import { initSdk } from "./sdk.js";
 
 // ---------------------------------------------------------------------------
 // CLI Argument Parsing
 // ---------------------------------------------------------------------------
 
-const args = process.argv.slice(2)
+const args = process.argv.slice(2);
 
-const isDebug = args.includes('--debug')
-const isDaemon = args.includes('--daemon')
-const isStatus = args.includes('--status')
-const isStop = args.includes('--stop')
-const isDaemonChildProcess = isDaemonChild()
+const isDebug = args.includes("--debug");
+const isDaemon = args.includes("--daemon");
+const isStatus = args.includes("--status");
+const isStop = args.includes("--stop");
+const isDaemonChildProcess = isDaemonChild();
 
 // ---------------------------------------------------------------------------
 // UDP Server with Ink Integration
@@ -53,85 +53,93 @@ const isDaemonChildProcess = isDaemonChild()
 function startUdpServer(
   setInstance: (id: string, instance: Instance) => void,
   removeInstance: (id: string) => void,
-  options: { debug?: boolean } = {}
+  options: { debug?: boolean } = {},
 ): Socket {
-  const isDebugMode = options.debug || false
-  const daemon = isDaemonChildProcess
-  
-  const socket = createSocket({ type: 'udp4', reuseAddr: true })
+  const isDebugMode = options.debug || false;
+  const daemon = isDaemonChildProcess;
 
-  socket.on('message', (msg, rinfo) => {
+  const socket = createSocket({ type: "udp4", reuseAddr: true });
+
+  socket.on("message", (msg, rinfo) => {
     try {
-      const data = JSON.parse(msg.toString()) as Instance & { type: string }
+      const data = JSON.parse(msg.toString()) as Instance & { type: string };
 
       if (isDebugMode) {
-        console.log(`[DEBUG] Received from ${rinfo.address}:${rinfo.port}:`)
-        console.log(JSON.stringify(data, null, 2))
-        return
+        console.log(`[DEBUG] Received from ${rinfo.address}:${rinfo.port}:`);
+        console.log(JSON.stringify(data, null, 2));
+        return;
       }
 
-      if (data.type === 'oc.status' && data.instanceId) {
-        if (data.status === 'shutdown') {
-          removeInstance(data.instanceId)
-          return
+      if (data.type === "oc.status" && data.instanceId) {
+        // Use composite key: instanceId + sessionID to differentiate parent from child sessions
+        // Child sessions (sub-agents) share the same process but have different sessionIDs
+        const instanceKey = data.sessionID
+          ? `${data.instanceId}:${data.sessionID}`
+          : data.instanceId;
+
+        if (data.status === "shutdown") {
+          removeInstance(instanceKey);
+          return;
         }
 
-        // Update instance
-        setInstance(data.instanceId, {
+        // Update instance with composite key
+        setInstance(instanceKey, {
           ...data,
+          instanceId: instanceKey, // Use composite key for consistency
           ts: data.ts || Date.now(),
-        })
+          _isChildSession: !!data.parentID,
+        });
       }
     } catch (err: any) {
       if (daemon) {
-        logDaemon(`Parse error: ${err.message}`)
+        logDaemon(`Parse error: ${err.message}`);
       }
     }
-  })
+  });
 
-  socket.on('listening', () => {
-    const addr = socket.address()
+  socket.on("listening", () => {
+    const addr = socket.address();
     if (daemon) {
-      logDaemon(`Listening on UDP ${addr.address}:${addr.port}`)
+      logDaemon(`Listening on UDP ${addr.address}:${addr.port}`);
     }
     // Note: Don't console.log in TUI mode - it causes full re-renders and flickering
-  })
+  });
 
-  socket.on('error', (err) => {
+  socket.on("error", (err) => {
     if (daemon) {
-      logDaemon(`Socket error: ${err.message}`)
+      logDaemon(`Socket error: ${err.message}`);
     } else {
-      console.error('Socket error:', err.message)
+      console.error("Socket error:", err.message);
     }
-    socket.close()
-    process.exit(1)
-  })
+    socket.close();
+    process.exit(1);
+  });
 
-  socket.bind(PORT)
-  
-  return socket
+  socket.bind(PORT);
+
+  return socket;
 }
 
 // ---------------------------------------------------------------------------
 // Wrapper Component for UDP Integration
 // ---------------------------------------------------------------------------
 
-import { useAppActions } from './components/index.js'
+import { useAppActions } from "./components/index.js";
 
 function AppWithUdp(): React.ReactElement {
-  const { setInstance, removeInstance } = useAppActions()
-  
+  const { setInstance, removeInstance } = useAppActions();
+
   // Start UDP server on mount
   // setInstance and removeInstance are stable (from useAppActions)
   React.useEffect(() => {
-    const socket = startUdpServer(setInstance, removeInstance)
-    
+    const socket = startUdpServer(setInstance, removeInstance);
+
     return () => {
-      socket.close()
-    }
-  }, [setInstance, removeInstance])
-  
-  return <App />
+      socket.close();
+    };
+  }, [setInstance, removeInstance]);
+
+  return <App />;
 }
 
 // ---------------------------------------------------------------------------
@@ -141,72 +149,72 @@ function AppWithUdp(): React.ReactElement {
 async function main(): Promise<void> {
   // Handle CLI commands
   if (isStatus) {
-    handleStatus()
-    return
+    handleStatus();
+    return;
   }
-  
+
   if (isStop) {
-    handleStop()
-    return
+    handleStop();
+    return;
   }
-  
+
   if (isDaemon) {
-    handleDaemon()
-    return
+    handleDaemon();
+    return;
   }
-  
+
   // Initialize SDK
-  await initSdk()
-  
+  await initSdk();
+
   // Debug mode - just show raw packets
   if (isDebug) {
-    console.log('Debug mode: showing raw UDP packets')
-    const socket = createSocket({ type: 'udp4', reuseAddr: true })
-    socket.on('message', (msg, rinfo) => {
+    console.log("Debug mode: showing raw UDP packets");
+    const socket = createSocket({ type: "udp4", reuseAddr: true });
+    socket.on("message", (msg, rinfo) => {
       try {
-        const data = JSON.parse(msg.toString())
-        console.log(`[DEBUG] Received from ${rinfo.address}:${rinfo.port}:`)
-        console.log(JSON.stringify(data, null, 2))
+        const data = JSON.parse(msg.toString());
+        console.log(`[DEBUG] Received from ${rinfo.address}:${rinfo.port}:`);
+        console.log(JSON.stringify(data, null, 2));
       } catch (err: any) {
-        console.error('Parse error:', err.message)
+        console.error("Parse error:", err.message);
       }
-    })
-    socket.on('listening', () => {
-      const addr = socket.address()
-      console.log(`Listening on UDP ${addr.address}:${addr.port}`)
-    })
-    socket.bind(PORT)
-    return
+    });
+    socket.on("listening", () => {
+      const addr = socket.address();
+      console.log(`Listening on UDP ${addr.address}:${addr.port}`);
+    });
+    socket.bind(PORT);
+    return;
   }
-  
+
   // Daemon child process
   if (isDaemonChildProcess) {
-    initDaemonChild()
-    const socket = createSocket({ type: 'udp4', reuseAddr: true })
-    socket.on('message', (msg) => {
+    initDaemonChild();
+    const socket = createSocket({ type: "udp4", reuseAddr: true });
+    socket.on("message", (msg) => {
       try {
-        const data = JSON.parse(msg.toString())
-        if (data.type === 'oc.status') {
+        const data = JSON.parse(msg.toString());
+        if (data.type === "oc.status") {
           // Just log for daemon mode
-          logDaemon(`Status: ${data.instanceId} -> ${data.status}`)
+          logDaemon(`Status: ${data.instanceId} -> ${data.status}`);
         }
       } catch (err: any) {
-        logDaemon(`Parse error: ${err.message}`)
+        logDaemon(`Parse error: ${err.message}`);
       }
-    })
-    socket.bind(PORT)
-    return
+    });
+    socket.bind(PORT);
+    return;
   }
-  
+
   // Normal TUI mode
-  checkDaemon()
-  
+  checkDaemon();
+
   // Check if stdin is a TTY
   if (!process.stdin.isTTY) {
-    console.error('Error: stdin is not a TTY. Run in an interactive terminal.')
-    process.exit(1)
+    console.error("Error: stdin is not a TTY. Run in an interactive terminal.");
+    process.exit(1);
   }
-  
+
   // Render the Ink app
   const { waitUntilExit } = render(
     <AppProvider>
@@ -214,14 +222,14 @@ async function main(): Promise<void> {
     </AppProvider>,
     {
       incrementalRendering: true,
-      patchConsole: true
-    }
-  )
-  
-  await waitUntilExit()
+      patchConsole: true,
+    },
+  );
+
+  await waitUntilExit();
 }
 
 main().catch((err) => {
-  console.error('Fatal error:', err)
-  process.exit(1)
-})
+  console.error("Fatal error:", err);
+  process.exit(1);
+});
