@@ -3,20 +3,22 @@
 // oc-session-manager - TUI dashboard for monitoring OpenCode sessions
 //
 // Usage:
-//   oc-session-manager           Run TUI display
-//   oc-session-manager --daemon  Run as background daemon (notifications only)
-//   oc-session-manager --status  Check if daemon is running
-//   oc-session-manager --stop    Stop the daemon
-//   oc-session-manager --debug   Show raw UDP packets
+//   oc-session-manager              Run TUI display
+//   oc-session-manager --daemon     Run as background daemon (notifications only)
+//   oc-session-manager --status     Check if daemon is running
+//   oc-session-manager --stop       Stop the daemon
+//   oc-session-manager --debug      Show raw UDP packets
+//   oc-session-manager --debug-sse  Log SSE events to stderr
+//   oc-session-manager --debug-state Periodic state dump to stderr
 //
 // Environment variables:
-//   OC_SESSION_PORT        - UDP port to listen on (default: 19876)
-//   OC_SESSION_TIMEOUT     - Seconds before instance considered stale (default: 120)
+//   OC_SESSION_PORT         - UDP port to listen on (default: 19876)
+//   OC_SESSION_TIMEOUT      - Seconds before instance considered stale (default: 120)
 //   OC_SESSION_LONG_RUNNING - Minutes before busy instance flagged as long-running (default: 10)
 
 import React from "react";
 import { render } from "ink";
-import { App, AppProvider, useApp } from "./components/index.js";
+import { App, AppProvider } from "./components/index.js";
 import { PORT } from "./config.js";
 import {
   checkDaemon,
@@ -28,8 +30,6 @@ import {
   logDaemon,
 } from "./daemon.js";
 import { createSocket, type Socket } from "node:dgram";
-import { exec } from "node:child_process";
-import { platform } from "node:os";
 import type { Instance } from "./types.js";
 
 import { initSdk } from "./sdk.js";
@@ -41,10 +41,19 @@ import { initSdk } from "./sdk.js";
 const args = process.argv.slice(2);
 
 const isDebug = args.includes("--debug");
+const isDebugSse = args.includes("--debug-sse");
+const isDebugState = args.includes("--debug-state");
 const isDaemon = args.includes("--daemon");
 const isStatus = args.includes("--status");
 const isStop = args.includes("--stop");
 const isDaemonChildProcess = isDaemonChild();
+
+// Export debug flags for use by other modules
+export const DEBUG_FLAGS = {
+  sse: isDebugSse,
+  state: isDebugState,
+  udp: isDebug,
+};
 
 // ---------------------------------------------------------------------------
 // UDP Server with Ink Integration
@@ -70,6 +79,38 @@ function startUdpServer(
         return;
       }
 
+      // Handle new oc.announce format (server discovery only)
+      if (data.type === "oc.announce" && data.serverUrl) {
+        // For now, create a placeholder instance from announce
+        // This will be replaced by proper SDK-based state in Phase 3
+        const instanceKey = data.instanceId;
+
+        if (DEBUG_FLAGS.udp) {
+          console.error(
+            `[UDP] Announce from ${instanceKey}: ${data.serverUrl}`,
+          );
+        }
+
+        setInstance(instanceKey, {
+          instanceId: instanceKey,
+          status: "idle", // Will be fetched from SDK
+          project: data.project,
+          directory: data.directory,
+          dirName: data.project,
+          branch: data.branch,
+          serverUrl: data.serverUrl,
+          ts: data.ts || Date.now(),
+        } as Instance);
+        return;
+      }
+
+      // Handle oc.shutdown
+      if (data.type === "oc.shutdown" && data.instanceId) {
+        removeInstance(data.instanceId);
+        return;
+      }
+
+      // Handle legacy oc.status format
       if (data.type === "oc.status" && data.instanceId) {
         // Use composite key: instanceId + sessionID to differentiate parent from child sessions
         // Child sessions (sub-agents) share the same process but have different sessionIDs
