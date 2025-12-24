@@ -124,6 +124,19 @@ oc-session-manager --stop       # Stop the daemon
 oc-session-manager --debug      # Show raw UDP packets
 ```
 
+## Plugin Management
+
+```bash
+# Install plugin (copy)
+npm run install-plugin
+
+# Install plugin (symlink - auto-updates with source)
+npm run link-plugin
+
+# Remove plugin
+npm run uninstall-plugin
+```
+
 ## Development
 
 ```bash
@@ -135,6 +148,30 @@ npm run build
 
 # Run production build
 npm start
+
+# Run tests
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with coverage
+npm run test:coverage
+```
+
+## Testing with Mock Data
+
+```bash
+# Start the TUI in one terminal
+npm start
+
+# In another terminal, send mock data
+node tools/fake-sender.mjs
+
+# Options:
+#   --count=N      Number of instances (default: 5)
+#   --interval=N   Update interval in ms (default: 2000)
+#   --chaos        Randomly add/remove instances
 ```
 
 ## License

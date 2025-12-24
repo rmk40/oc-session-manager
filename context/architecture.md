@@ -31,30 +31,32 @@ This project is the TypeScript successor to `oc-busy-status`.
 ```
 oc-session-manager/
 ├── src/
-│   ├── index.ts       # Entry point, CLI parsing
-│   ├── config.ts      # Constants, ANSI codes, env vars
-│   ├── types.ts       # TypeScript interfaces
-│   ├── state.ts       # Global state (instances, view state)
-│   ├── utils.ts       # Formatting, text helpers
-│   ├── daemon.ts      # PID management, daemon start/stop
-│   ├── server.ts      # UDP socket, session discovery
-│   ├── session.ts     # Session viewer logic, SSE
-│   ├── render.ts      # All TUI rendering
-│   └── input.ts       # Keyboard handlers
+│   ├── index.ts          # Entry point, CLI parsing
+│   ├── config.ts         # Constants, ANSI codes, env vars
+│   ├── types.ts          # TypeScript interfaces
+│   ├── state.ts          # Global state (instances, view state)
+│   ├── utils.ts          # Formatting, text helpers
+│   ├── daemon.ts         # PID management, daemon start/stop
+│   ├── server.ts         # UDP socket, session discovery
+│   ├── session.ts        # Session viewer logic, SSE
+│   ├── render.ts         # All TUI rendering
+│   ├── input.ts          # Keyboard handlers
+│   ├── *.test.ts         # Unit tests (574 tests, 99.9% coverage)
 │
 ├── opencode/plugin/
 │   └── oc-session-manager.js   # OpenCode plugin
 │
 ├── tools/
-│   └── fake-sender.mjs         # Test utility
+│   └── fake-sender.mjs         # Test utility for mock data
 │
 ├── context/
 │   ├── architecture.md         # This file
 │   └── migration-plan.md       # Migration from oc-busy-status
 │
 ├── dist/
-│   └── index.js       # Bundled output (~68 KB)
+│   └── oc-session-manager.mjs  # Bundled output (~68 KB)
 │
+├── vitest.config.ts      # Test configuration
 ├── tsconfig.json
 ├── package.json
 └── README.md
@@ -187,7 +189,7 @@ oc-session-manager/
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OC_SESSION_PORT` | `19876` | UDP port to listen on |
-| `OC_SESSION_TIMEOUT` | `5` | Minutes before stale |
+| `OC_SESSION_TIMEOUT` | `120` | Seconds before stale |
 | `OC_SESSION_LONG_RUNNING` | `10` | Minutes before flagged |
 | `OC_SESSION_NOTIFY` | `1` | Enable desktop notifications |
 
@@ -291,9 +293,14 @@ The session viewer uses a hybrid approach:
 
 - **Node.js 18+**
 - **@opencode-ai/sdk** - Session viewer functionality
-- **tsup** - Bundling (dev dependency)
-- **tsx** - Development with hot reload (dev dependency)
-- **typescript** - Type checking (dev dependency)
+
+Dev dependencies:
+- **vitest** - Test framework
+- **@vitest/coverage-v8** - Coverage reporting
+- **tsup** - Bundling
+- **tsx** - Development with hot reload
+- **typescript** - Type checking
+- **@types/node** - Node.js type definitions
 
 Built-in Node.js modules:
 - `node:dgram` - UDP sockets
@@ -302,3 +309,15 @@ Built-in Node.js modules:
 - `node:fs` - PID file
 - `node:child_process` - git branch, notifications
 - `node:readline` - keyboard input
+
+## Testing
+
+Run `npm test` for the full test suite (574 tests, 99.9% line coverage).
+
+```bash
+npm test              # Run all tests
+npm run test:watch    # Watch mode
+npm run test:coverage # With coverage report
+```
+
+Test files are co-located with source files (`*.test.ts`).
