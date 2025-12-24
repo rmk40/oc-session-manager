@@ -3,14 +3,14 @@
   "version": "0.1.0",
   "description": "TUI dashboard for monitoring and managing multiple OpenCode sessions",
   "type": "module",
-  "main": "dist/index.mjs",
+  "main": "dist/oc-session-manager.mjs",
   "bin": {
-    "oc-session-manager": "dist/index.mjs"
+    "oc-session-manager": "dist/oc-session-manager.mjs"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsup src/index.ts --format esm --outDir dist --clean",
-    "start": "node dist/index.mjs"
+    "build": "tsup src/index.ts --format esm --outDir dist --clean && mv dist/index.js dist/oc-session-manager.mjs",
+    "start": "node dist/oc-session-manager.mjs"
   },
   "keywords": ["opencode", "tui", "session", "monitor"],
   "license": "MIT",
