@@ -11,7 +11,7 @@ export function FlatView(): React.ReactElement {
   const { state } = useApp()
   const [spinnerFrame, setSpinnerFrame] = useState(0)
   
-  // Animate spinner
+  // Animate spinner for busy instances
   useEffect(() => {
     const interval = setInterval(() => {
       setSpinnerFrame(f => (f + 1) % SPINNER.length)
@@ -23,16 +23,17 @@ export function FlatView(): React.ReactElement {
   const sorted = Array.from(state.instances.values())
     .sort((a, b) => (a.instanceId || '').localeCompare(b.instanceId || ''))
 
+  // Empty state
   if (sorted.length === 0) {
     return (
       <Box paddingX={1} paddingY={1}>
-        <Text color="gray">No OpenCode instances detected</Text>
+        <Text dimColor>No OpenCode instances detected</Text>
       </Box>
     )
   }
 
   return (
-    <Box flexDirection="column" paddingX={1}>
+    <Box flexDirection="column" paddingX={1} overflow="hidden">
       {sorted.map((inst, idx) => (
         <InstanceRow
           key={inst.instanceId}

@@ -1,12 +1,16 @@
-// Session viewer component - shows messages from a session
+// Session viewer component - shows messages from a session (full screen)
 
 import React from 'react'
-import { Box, Text, useStdout } from 'ink'
+import { Box, Text, Spacer } from 'ink'
 import { useApp } from './AppContext.js'
 
-export function SessionView(): React.ReactElement {
-  const { state, actions } = useApp()
-  const { stdout } = useStdout()
+interface SessionViewProps {
+  width: number
+  height: number
+}
+
+export function SessionView({ width, height }: SessionViewProps): React.ReactElement {
+  const { state } = useApp()
   
   const inst = state.sessionViewInstance
   const identifier = inst 
@@ -36,27 +40,29 @@ export function SessionView(): React.ReactElement {
   const navIndicator = hasMultipleSessions 
     ? ` [${state.sessionViewSessionIndex + 1}/${state.sessionViewSessions.length}]`
     : ''
-  
-  // Calculate content height
-  const termHeight = stdout?.rows || 24
-  const contentHeight = termHeight - 6
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="cyan">
+    <Box 
+      flexDirection="column" 
+      borderStyle="round" 
+      borderColor="cyan"
+      width={width}
+      height={height}
+    >
       {/* Header */}
       <Box paddingX={1} justifyContent="space-between">
         <Box>
           <Text bold>{identifier}</Text>
           {state.sessionViewSessionTitle && (
-            <Text color="gray"> "{truncate(state.sessionViewSessionTitle, 30)}"</Text>
+            <Text dimColor> "{truncate(state.sessionViewSessionTitle, 30)}"</Text>
           )}
           <Text>{navIndicator}</Text>
         </Box>
         <Text color={statusColor}>{statusIcon} {status.toUpperCase()}</Text>
       </Box>
       
-      {/* Content */}
-      <Box flexDirection="column" paddingX={1} height={contentHeight}>
+      {/* Content area - fills remaining space */}
+      <Box flexDirection="column" paddingX={1} flexGrow={1} overflow="hidden">
         {state.sessionViewConnecting ? (
           <CenteredMessage message="Connecting..." />
         ) : state.sessionViewError ? (
@@ -68,11 +74,11 @@ export function SessionView(): React.ReactElement {
         ) : state.sessionViewPendingPermissions.size > 0 ? (
           <PermissionPrompt />
         ) : (
-          <MessageContent height={contentHeight} />
+          <MessageContent />
         )}
       </Box>
       
-      {/* Session navigation bar */}
+      {/* Session navigation bar (if multiple sessions) */}
       {hasMultipleSessions && (
         <Box paddingX={1} borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false}>
           {state.sessionViewSessions.map((sess: any, idx: number) => {
@@ -83,7 +89,7 @@ export function SessionView(): React.ReactElement {
             const label = truncate(sess.title || sess.id?.slice(-4) || '?', 15)
             
             return (
-              <Box key={sess.id} marginRight={1}>
+              <Box key={sess.id || `session-${idx}`} marginRight={1}>
                 <Text inverse={isCurrent} color={sessColor}>{sessIcon}</Text>
                 <Text inverse={isCurrent}> {label}</Text>
               </Box>
@@ -92,9 +98,9 @@ export function SessionView(): React.ReactElement {
         </Box>
       )}
       
-      {/* Help bar */}
-      <Box paddingX={1}>
-        <Text color="gray">
+      {/* Help bar at bottom */}
+      <Box paddingX={1} borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false}>
+        <Text dimColor>
           [Esc] back  [↑↓] scroll
           {hasMultipleSessions && '  [Ctrl+←/→] switch session'}
           {(status === 'busy' || status === 'running' || status === 'pending') && '  [a]bort'}
@@ -118,7 +124,7 @@ function ConfirmAbort(): React.ReactElement {
   return (
     <Box flexDirection="column" justifyContent="center" alignItems="center" flexGrow={1}>
       <Text color="yellow">Abort this session?</Text>
-      <Text color="gray">[y]es  [n]o</Text>
+      <Text dimColor>[y]es  [n]o</Text>
     </Box>
   )
 }
@@ -128,8 +134,8 @@ function InputMode(): React.ReactElement {
   
   return (
     <Box flexDirection="column" flexGrow={1}>
-      <Box flexGrow={1}>
-        <MessageContent height={-1} />
+      <Box flexGrow={1} overflow="hidden">
+        <MessageContent />
       </Box>
       <Box borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false} paddingX={1}>
         <Text color="green">&gt; </Text>
@@ -137,7 +143,7 @@ function InputMode(): React.ReactElement {
         <Text>▌</Text>
       </Box>
       <Box paddingX={1}>
-        <Text color="gray">[Enter] send  [Esc] cancel</Text>
+        <Text dimColor>[Enter] send  [Esc] cancel</Text>
       </Box>
     </Box>
   )
@@ -147,50 +153,44 @@ function PermissionPrompt(): React.ReactElement {
   const { state } = useApp()
   
   // Get first pending permission
-  const [permId, perm] = state.sessionViewPendingPermissions.entries().next().value || []
+  const entries = Array.from(state.sessionViewPendingPermissions.entries())
+  const [permId, perm] = entries[0] || []
   
   if (!perm) {
-    return <MessageContent height={-1} />
+    return <MessageContent />
   }
   
   return (
     <Box flexDirection="column" flexGrow={1}>
-      <Box flexGrow={1}>
-        <MessageContent height={-1} />
+      <Box flexGrow={1} overflow="hidden">
+        <MessageContent />
       </Box>
       <Box flexDirection="column" borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false} paddingX={1}>
         <Text color="yellow">Permission Request</Text>
         <Text>Tool: {perm.tool || 'unknown'}</Text>
         {perm.args && (
-          <Text color="gray">{truncate(formatArgs(perm.args), 60)}</Text>
+          <Text dimColor>{truncate(formatArgs(perm.args), 60)}</Text>
         )}
-        <Text color="gray">[a]llow  [A]llow always  [d]eny  [D]eny always  [Esc] dismiss</Text>
+        <Text dimColor>[a]llow  [A]llow always  [d]eny  [D]eny always  [Esc] dismiss</Text>
       </Box>
     </Box>
   )
 }
 
-function MessageContent({ height }: { height: number }): React.ReactElement {
+function MessageContent(): React.ReactElement {
   const { state } = useApp()
   
   if (state.sessionViewRenderedLines.length === 0) {
     return <CenteredMessage message="No messages yet" />
   }
   
-  // Simple display of rendered lines with scrolling
+  // Get visible lines based on scroll offset
   const lines = state.sessionViewRenderedLines
-  const visibleHeight = height > 0 ? height : lines.length
-  
-  const totalLines = lines.length
-  const startLine = Math.max(0, totalLines - visibleHeight - state.sessionViewScrollOffset)
-  const endLine = Math.min(totalLines, startLine + visibleHeight)
-  
-  const visibleLines = lines.slice(startLine, endLine)
   
   return (
-    <Box flexDirection="column">
-      {visibleLines.map((line, idx) => (
-        <Text key={startLine + idx}>{line.text || line.plain}</Text>
+    <Box flexDirection="column" overflow="hidden">
+      {lines.map((line, idx) => (
+        <Text key={`line-${idx}`}>{line.text || line.plain}</Text>
       ))}
     </Box>
   )

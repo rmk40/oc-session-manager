@@ -1,6 +1,6 @@
-// Main App component
+// Main App component - Full-screen TUI using Ink best practices
 
-import React, { useEffect } from 'react'
+import React from 'react'
 import { Box, useApp as useInkApp, useInput, useStdout } from 'ink'
 import { useApp } from './AppContext.js'
 import { Header } from './Header.js'
@@ -9,13 +9,18 @@ import { FlatView } from './FlatView.js'
 import { DetailView } from './DetailView.js'
 import { SessionView } from './SessionView.js'
 import { HelpBar } from './HelpBar.js'
+import type { Instance } from '../types.js'
 
 export function App(): React.ReactElement {
   const { exit } = useInkApp()
   const { state, actions } = useApp()
   const { stdout } = useStdout()
   
-  // Handle keyboard input
+  // Get terminal dimensions for full-screen layout
+  const termWidth = stdout?.columns || 80
+  const termHeight = stdout?.rows || 24
+  
+  // Handle keyboard input using Ink's useInput hook
   useInput((input, key) => {
     // Session view has its own input handling
     if (state.sessionViewActive) {
@@ -160,7 +165,7 @@ export function App(): React.ReactElement {
     
     // Scrolling
     if (key.upArrow || input === 'k') {
-      const maxScroll = Math.max(0, state.sessionViewRenderedLines.length - (stdout?.rows || 24) + 6)
+      const maxScroll = Math.max(0, state.sessionViewRenderedLines.length - termHeight + 6)
       actions.setSessionViewScrollOffset(Math.min(maxScroll, state.sessionViewScrollOffset + 1))
       return
     }
@@ -265,17 +270,17 @@ export function App(): React.ReactElement {
     }
   }
 
-  function getGroupKey(instance: { project?: string; dirName?: string; branch?: string }): string {
+  function getGroupKey(instance: Instance): string {
     const project = instance.project || instance.dirName || 'unknown'
     const branch = instance.branch || 'main'
     return `${project}:${branch}`
   }
 
-  function getGroupedInstances(): [string, any[]][] {
+  function getGroupedInstances(): [string, Instance[]][] {
     const sorted = Array.from(state.instances.values())
       .sort((a, b) => (a.instanceId || '').localeCompare(b.instanceId || ''))
     
-    const groups = new Map<string, any[]>()
+    const groups = new Map<string, Instance[]>()
     for (const inst of sorted) {
       const key = getGroupKey(inst)
       if (!groups.has(key)) {
@@ -287,22 +292,51 @@ export function App(): React.ReactElement {
     return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b))
   }
 
-  // Render
+  // Render session view (full screen)
   if (state.sessionViewActive) {
-    return <SessionView />
+    return (
+      <Box 
+        flexDirection="column" 
+        width={termWidth} 
+        height={termHeight}
+      >
+        <SessionView width={termWidth} height={termHeight} />
+      </Box>
+    )
   }
   
+  // Render detail view (full screen)
   if (state.detailView) {
     const inst = state.instances.get(state.detailView)
     if (inst) {
-      return <DetailView instance={inst} />
+      return (
+        <Box 
+          flexDirection="column" 
+          width={termWidth} 
+          height={termHeight}
+        >
+          <DetailView instance={inst} width={termWidth} height={termHeight} />
+        </Box>
+      )
     }
   }
 
+  // Main view - full screen with header, content, and help bar
   return (
-    <Box flexDirection="column" width="100%">
+    <Box 
+      flexDirection="column" 
+      width={termWidth} 
+      height={termHeight}
+    >
+      {/* Header - fixed height */}
       <Header />
-      {state.viewMode === 'grouped' ? <GroupedView /> : <FlatView />}
+      
+      {/* Content area - fills remaining space */}
+      <Box flexDirection="column" flexGrow={1} overflow="hidden">
+        {state.viewMode === 'grouped' ? <GroupedView /> : <FlatView />}
+      </Box>
+      
+      {/* Help bar - fixed height at bottom */}
       <HelpBar />
     </Box>
   )

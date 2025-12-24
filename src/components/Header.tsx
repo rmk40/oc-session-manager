@@ -1,4 +1,4 @@
-// Header component with status summary
+// Header component with status summary - fixed height
 
 import React from 'react'
 import { Box, Text } from 'ink'
@@ -18,20 +18,27 @@ export function Header(): React.ReactElement {
   
   const total = state.instances.size
   const isAnyBusy = busy > 0
+  const title = state.viewMode === 'flat' ? 'oc-session-manager (flat)' : 'oc-session-manager'
   
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
-      <Box>
+    <Box 
+      flexDirection="column" 
+      borderStyle="round" 
+      borderColor="cyan"
+    >
+      {/* Title row */}
+      <Box paddingX={1}>
         <Text bold color={isAnyBusy ? 'yellow' : 'white'}>
-          oc-session-manager
+          {title}
         </Text>
-        {state.viewMode === 'flat' && <Text color="gray"> (flat)</Text>}
       </Box>
-      <Box gap={2}>
+      
+      {/* Status summary row */}
+      <Box paddingX={1} gap={2}>
         <Text color="green">● IDLE ({idle})</Text>
         <Text color="yellow">○ BUSY ({busy})</Text>
         <Text color="gray">◌ STALE ({stale})</Text>
-        <Text>Total: {total}</Text>
+        <Text dimColor>Total: {total}</Text>
       </Box>
     </Box>
   )

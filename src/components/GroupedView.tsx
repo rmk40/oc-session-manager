@@ -1,7 +1,7 @@
 // Grouped view - instances organized by project:branch
 
 import React, { useState, useEffect } from 'react'
-import { Box, Text, useStdout } from 'ink'
+import { Box, Text } from 'ink'
 import { useApp } from './AppContext.js'
 import { InstanceRow } from './InstanceRow.js'
 import type { Instance } from '../types.js'
@@ -10,10 +10,9 @@ const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', 
 
 export function GroupedView(): React.ReactElement {
   const { state, actions } = useApp()
-  const { stdout } = useStdout()
   const [spinnerFrame, setSpinnerFrame] = useState(0)
   
-  // Animate spinner
+  // Animate spinner for busy instances
   useEffect(() => {
     const interval = setInterval(() => {
       setSpinnerFrame(f => (f + 1) % SPINNER.length)
@@ -21,26 +20,23 @@ export function GroupedView(): React.ReactElement {
     return () => clearInterval(interval)
   }, [])
   
-  // Group instances
+  // Group instances by project:branch
   const groups = getGroupedInstances()
-  
-  // Track selectable index
-  let currentIndex = 0
   
   function getGroupedInstances(): [string, Instance[]][] {
     const sorted = Array.from(state.instances.values())
       .sort((a, b) => (a.instanceId || '').localeCompare(b.instanceId || ''))
     
-    const groups = new Map<string, Instance[]>()
+    const groupMap = new Map<string, Instance[]>()
     for (const inst of sorted) {
       const key = getGroupKey(inst)
-      if (!groups.has(key)) {
-        groups.set(key, [])
+      if (!groupMap.has(key)) {
+        groupMap.set(key, [])
       }
-      groups.get(key)!.push(inst)
+      groupMap.get(key)!.push(inst)
     }
     
-    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b))
+    return Array.from(groupMap.entries()).sort(([a], [b]) => a.localeCompare(b))
   }
   
   function getGroupKey(instance: Instance): string {
@@ -75,16 +71,20 @@ export function GroupedView(): React.ReactElement {
     return `${(tokens / 1000000).toFixed(2)}M`
   }
 
+  // Empty state
   if (groups.length === 0) {
     return (
       <Box paddingX={1} paddingY={1}>
-        <Text color="gray">No OpenCode instances detected</Text>
+        <Text dimColor>No OpenCode instances detected</Text>
       </Box>
     )
   }
 
+  // Track current selectable index for highlighting
+  let currentIndex = 0
+
   return (
-    <Box flexDirection="column" paddingX={1}>
+    <Box flexDirection="column" paddingX={1} overflow="hidden">
       {groups.map(([groupKey, groupInstances]) => {
         const isCollapsed = state.collapsedGroups.has(groupKey)
         const stats = getGroupStats(groupInstances)
@@ -94,24 +94,34 @@ export function GroupedView(): React.ReactElement {
         
         const isGroupSelected = state.selectedIndex === groupIndex
         
+        // Build status indicators
+        const statusParts: React.ReactNode[] = []
+        if (stats.idle > 0) statusParts.push(<Text key="idle" color="green">●{stats.idle}</Text>)
+        if (stats.busy > 0) statusParts.push(<Text key="busy" color="yellow">○{stats.busy}</Text>)
+        if (stats.stale > 0) statusParts.push(<Text key="stale" color="gray">◌{stats.stale}</Text>)
+        
+        const costStr = formatCost(stats.cost)
+        const tokStr = formatTokens(stats.tokens)
+        
         return (
           <Box key={groupKey} flexDirection="column">
             {/* Group header */}
-            <Box>
-              <Text inverse={isGroupSelected}>
-                <Text>{isCollapsed ? '▶' : '▼'} </Text>
-                <Text bold>{dirName}</Text>
-                <Text color="cyan">:{branch}</Text>
-                <Text>  </Text>
-                {stats.idle > 0 && <Text color="green">●{stats.idle} </Text>}
-                {stats.busy > 0 && <Text color="yellow">○{stats.busy} </Text>}
-                {stats.stale > 0 && <Text color="gray">◌{stats.stale} </Text>}
-                {stats.cost > 0 && <Text color="gray"> {formatCost(stats.cost)}</Text>}
-                {stats.tokens > 0 && <Text color="gray"> {formatTokens(stats.tokens)}</Text>}
-              </Text>
-            </Box>
+            <Text inverse={isGroupSelected}>
+              {isCollapsed ? '▶ ' : '▼ '}
+              <Text bold>{dirName}</Text>
+              <Text color="cyan">:{branch}</Text>
+              {'  '}
+              {statusParts.map((part, i) => (
+                <React.Fragment key={i}>
+                  {part}
+                  {i < statusParts.length - 1 ? ' ' : ''}
+                </React.Fragment>
+              ))}
+              {costStr && <Text dimColor> {costStr}</Text>}
+              {tokStr && <Text dimColor> {tokStr}</Text>}
+            </Text>
             
-            {/* Instance rows */}
+            {/* Instance rows (if not collapsed) */}
             {!isCollapsed && groupInstances.map((inst) => {
               const instIndex = currentIndex
               currentIndex++

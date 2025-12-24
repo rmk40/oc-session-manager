@@ -1,7 +1,7 @@
 // Single instance row component
 
 import React from 'react'
-import { Box, Text } from 'ink'
+import { Text } from 'ink'
 import { useApp } from './AppContext.js'
 import type { Instance } from '../types.js'
 
@@ -58,30 +58,25 @@ export function InstanceRow({
   const tokStr = formatTokens(instance.tokens?.total)
   
   // Time
-  let timeStr: string
-  if (status === 'busy') {
-    timeStr = formatDuration(busyDuration)
-  } else {
-    timeStr = formatRelativeTime(instance.ts)
-  }
+  const timeStr = status === 'busy' 
+    ? formatDuration(busyDuration)
+    : formatRelativeTime(instance.ts)
   
   // Project:branch for flat view
-  const projectBranch = showProject 
+  const prefix = showProject 
     ? `${instance.dirName || '?'}:${instance.branch || '?'}:` 
     : ''
 
   return (
-    <Box>
-      <Text inverse={isSelected}>
-        <Text>{' '.repeat(indent)}</Text>
-        <Text color={statusColor}>{statusIcon}</Text>
-        <Text> {projectBranch}{shortSession}  </Text>
-        <Text color="gray">"{truncatedTitle}"</Text>
-        {costStr && <Text color="magenta">  {costStr}</Text>}
-        {tokStr && <Text color="magenta"> {tokStr}</Text>}
-        <Text color="gray">  {timeStr.padStart(8)}</Text>
-      </Text>
-    </Box>
+    <Text inverse={isSelected}>
+      {' '.repeat(indent)}
+      <Text color={statusColor}>{statusIcon}</Text>
+      {' '}{prefix}{shortSession}{'  '}
+      <Text dimColor>"{truncatedTitle}"</Text>
+      {costStr && <Text color="magenta">  {costStr}</Text>}
+      {tokStr && <Text color="magenta"> {tokStr}</Text>}
+      <Text dimColor>  {timeStr.padStart(8)}</Text>
+    </Text>
   )
 }
 
@@ -99,8 +94,7 @@ function formatTokens(tokens: number | undefined): string {
 }
 
 function formatRelativeTime(ts: number): string {
-  const now = Date.now()
-  const diff = now - ts
+  const diff = Date.now() - ts
   
   if (diff < 1000) return 'now'
   if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`

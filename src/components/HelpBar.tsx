@@ -1,4 +1,4 @@
-// Help bar at the bottom
+// Help bar at the bottom - fixed height
 
 import React from 'react'
 import { Box, Text } from 'ink'
@@ -10,8 +10,8 @@ export function HelpBar(): React.ReactElement {
   const viewToggle = state.viewMode === 'grouped' ? 'flat' : 'grouped'
   
   return (
-    <Box paddingX={1}>
-      <Text color="gray">
+    <Box paddingX={1} borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false}>
+      <Text dimColor>
         q: quit  ↑↓/jk: nav  Enter: watch  i: info  d: remove  c: clear stale  Tab: {viewToggle}
       </Text>
     </Box>

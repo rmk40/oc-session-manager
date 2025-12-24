@@ -1,15 +1,17 @@
-// Detail view for a single instance
+// Detail view for a single instance - full screen
 
 import React from 'react'
-import { Box, Text } from 'ink'
+import { Box, Text, Spacer } from 'ink'
 import { useApp } from './AppContext.js'
 import type { Instance } from '../types.js'
 
 interface DetailViewProps {
   instance: Instance
+  width: number
+  height: number
 }
 
-export function DetailView({ instance }: DetailViewProps): React.ReactElement {
+export function DetailView({ instance, width, height }: DetailViewProps): React.ReactElement {
   const { actions } = useApp()
   
   const status = actions.getEffectiveStatus(instance)
@@ -27,51 +29,65 @@ export function DetailView({ instance }: DetailViewProps): React.ReactElement {
   const tokTotal = instance.tokens?.total ?? 0
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
+    <Box 
+      flexDirection="column" 
+      borderStyle="round" 
+      borderColor="cyan"
+      width={width}
+      height={height}
+    >
       {/* Header */}
-      <Text bold color="cyan">{identifier}</Text>
-      
-      {/* Status */}
-      <Box marginTop={1}>
-        <Text>Status: </Text>
-        <Text color={statusColors[status]}>
-          {statusIcons[status]} {status.toUpperCase()}
-        </Text>
+      <Box paddingX={1}>
+        <Text bold color="cyan">{identifier}</Text>
       </Box>
       
-      {/* Session info */}
-      <Box flexDirection="column" marginTop={1}>
-        <Text>Session ID: {instance.sessionID ?? 'N/A'}</Text>
-        {instance.parentID && <Text>Parent ID: {instance.parentID}</Text>}
-        <Text>Title: {instance.title ?? 'N/A'}</Text>
-        <Text>Directory: {instance.directory ?? 'N/A'}</Text>
-        <Text>Host: {instance.host ?? 'N/A'}</Text>
-      </Box>
-      
-      {/* Model & Cost */}
-      <Box flexDirection="column" marginTop={1}>
-        <Text>Model: {instance.model ?? 'N/A'}</Text>
-        <Text>Cost: {formatCost(instance.cost) || '$0.00'}</Text>
-        <Text>Tokens: {tokTotal.toLocaleString()} total ({tokIn.toLocaleString()} in / {tokOut.toLocaleString()} out)</Text>
-      </Box>
-      
-      {/* Timing */}
-      <Box flexDirection="column" marginTop={1}>
-        <Text>Last Update: {formatRelativeTime(instance.ts)}</Text>
-        {instance.busyTime && (
-          <Text>Total Busy Time: {formatDuration(instance.busyTime)}</Text>
-        )}
-        {status === 'busy' && (
-          <Text color={actions.isLongRunning(instance) ? 'red' : undefined}>
-            Busy For: {formatDuration(actions.getBusyDuration(instance))}
-            {actions.isLongRunning(instance) && ' LONG RUNNING'}
+      {/* Content area */}
+      <Box flexDirection="column" paddingX={1} flexGrow={1}>
+        {/* Status */}
+        <Box marginTop={1}>
+          <Text>Status: </Text>
+          <Text color={statusColors[status]}>
+            {statusIcons[status]} {status.toUpperCase()}
           </Text>
-        )}
+        </Box>
+        
+        {/* Session info */}
+        <Box flexDirection="column" marginTop={1}>
+          <Text>Session ID: {instance.sessionID ?? 'N/A'}</Text>
+          {instance.parentID && <Text>Parent ID: {instance.parentID}</Text>}
+          <Text>Title: {instance.title ?? 'N/A'}</Text>
+          <Text>Directory: {instance.directory ?? 'N/A'}</Text>
+          <Text>Host: {instance.host ?? 'N/A'}</Text>
+        </Box>
+        
+        {/* Model & Cost */}
+        <Box flexDirection="column" marginTop={1}>
+          <Text>Model: {instance.model ?? 'N/A'}</Text>
+          <Text>Cost: {formatCost(instance.cost) || '$0.00'}</Text>
+          <Text>Tokens: {tokTotal.toLocaleString()} total ({tokIn.toLocaleString()} in / {tokOut.toLocaleString()} out)</Text>
+        </Box>
+        
+        {/* Timing */}
+        <Box flexDirection="column" marginTop={1}>
+          <Text>Last Update: {formatRelativeTime(instance.ts)}</Text>
+          {instance.busyTime !== undefined && (
+            <Text>Total Busy Time: {formatDuration(instance.busyTime)}</Text>
+          )}
+          {status === 'busy' && (
+            <Text color={actions.isLongRunning(instance) ? 'red' : undefined}>
+              Busy For: {formatDuration(actions.getBusyDuration(instance))}
+              {actions.isLongRunning(instance) && ' LONG RUNNING'}
+            </Text>
+          )}
+        </Box>
+        
+        {/* Spacer to push help to bottom */}
+        <Spacer />
       </Box>
       
-      {/* Help */}
-      <Box marginTop={1}>
-        <Text color="gray">Esc/Enter: back  d: remove</Text>
+      {/* Help bar at bottom */}
+      <Box paddingX={1} borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false}>
+        <Text dimColor>Esc/Enter: back  d: remove</Text>
       </Box>
     </Box>
   )
@@ -84,8 +100,7 @@ function formatCost(cost: number | undefined): string {
 }
 
 function formatRelativeTime(ts: number): string {
-  const now = Date.now()
-  const diff = now - ts
+  const diff = Date.now() - ts
   
   if (diff < 1000) return 'now'
   if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`
