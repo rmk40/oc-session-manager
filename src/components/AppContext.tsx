@@ -159,6 +159,80 @@ export function useStatusHelpers() {
   return { getEffectiveStatus, isLongRunning, getBusyDuration };
 }
 
+/**
+ * Hook for SDK-driven session status helpers
+ */
+export function useSessionHelpers() {
+  const { sessions, servers } = useAppState();
+  const currentTime = useTime();
+
+  const getSessionStatus = useCallback(
+    (sessionId: string): "idle" | "busy" | "pending" | "disconnected" => {
+      const session = sessions.get(sessionId);
+      if (!session) return "idle";
+
+      // Check if server is disconnected
+      const server = Array.from(servers.values()).find(
+        (s) => s.serverUrl === session.serverUrl,
+      );
+      if (server && server.status === "disconnected") return "disconnected";
+
+      // Check for pending permission
+      if (session.pendingPermission) return "pending";
+
+      // Map session status
+      if (session.status === "running") return "busy";
+      if (session.status === "pending") return "pending";
+      return "idle";
+    },
+    [sessions, servers],
+  );
+
+  const isSessionLongRunning = useCallback(
+    (sessionId: string): boolean => {
+      const session = sessions.get(sessionId);
+      if (!session || !session.busySince) return false;
+      return currentTime - session.busySince > LONG_RUNNING_MS;
+    },
+    [sessions, currentTime],
+  );
+
+  const getSessionBusyDuration = useCallback(
+    (sessionId: string): number => {
+      const session = sessions.get(sessionId);
+      if (!session || !session.busySince) return 0;
+      return currentTime - session.busySince;
+    },
+    [sessions, currentTime],
+  );
+
+  const getServerStatus = useCallback(
+    (serverUrl: string): "connecting" | "connected" | "disconnected" => {
+      const server = servers.get(serverUrl);
+      return server?.status || "disconnected";
+    },
+    [servers],
+  );
+
+  const getServerDisconnectedDuration = useCallback(
+    (serverUrl: string): number => {
+      const server = servers.get(serverUrl);
+      if (!server || server.status !== "disconnected" || !server.disconnectedAt)
+        return 0;
+      return currentTime - server.disconnectedAt;
+    },
+    [servers, currentTime],
+  );
+
+  return {
+    getSessionStatus,
+    isSessionLongRunning,
+    getSessionBusyDuration,
+    getServerStatus,
+    getServerDisconnectedDuration,
+  };
+}
+
 // Legacy hook for compatibility
 export function useApp(): {
   state: AppState & ViewState & { currentTime: number };

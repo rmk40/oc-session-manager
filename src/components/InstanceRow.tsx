@@ -2,7 +2,12 @@
 
 import React, { useContext } from "react";
 import { Text, Box } from "ink";
-import { useTime, useStatusHelpers, useViewState } from "./AppContext.js";
+import {
+  useTime,
+  useStatusHelpers,
+  useViewState,
+  useAppState,
+} from "./AppContext.js";
 import { SpinnerContext } from "./App.js";
 import type { Instance } from "../types.js";
 
@@ -18,9 +23,27 @@ interface InstanceRowProps {
 
 const StatusIndicator = React.memo(({ instance }: { instance: Instance }) => {
   const { getEffectiveStatus, isLongRunning } = useStatusHelpers();
+  const { sessions, servers } = useAppState();
   const spinnerFrame = useContext(SpinnerContext);
+
+  // Check for pending permission in SDK session
+  const sdkSession = instance.sessionID
+    ? sessions.get(instance.sessionID)
+    : null;
+  const hasPendingPermission = sdkSession?.pendingPermission != null;
+
+  // Check for server disconnected
+  const server = instance.serverUrl
+    ? servers.get(instance.serverUrl)
+    : undefined;
+  const isDisconnected = server?.status === "disconnected";
+
+  if (isDisconnected) return <Text color="gray">◌</Text>;
+  if (hasPendingPermission) return <Text color="yellow">◆</Text>;
+
   const status = getEffectiveStatus(instance);
   const longRunning = isLongRunning(instance);
+
   if (status === "idle") return <Text color="green">●</Text>;
   if (status === "busy") {
     if (longRunning) return <Text color="red">!</Text>;

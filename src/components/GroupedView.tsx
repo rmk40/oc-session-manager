@@ -2,7 +2,12 @@
 
 import React, { useMemo } from "react";
 import { Box, Text } from "ink";
-import { useAppState, useViewState, useStatusHelpers } from "./AppContext.js";
+import {
+  useAppState,
+  useViewState,
+  useStatusHelpers,
+  useSessionHelpers,
+} from "./AppContext.js";
 import { InstanceRow } from "./InstanceRow.js";
 import type { Instance } from "../types.js";
 
@@ -13,9 +18,11 @@ interface TreeNode {
 }
 
 export const GroupedView = React.memo((): React.ReactElement => {
-  const { instances } = useAppState();
+  const { instances, servers } = useAppState();
   const { selectedIndex, collapsedGroups } = useViewState();
   const { getEffectiveStatus } = useStatusHelpers();
+  const { getServerStatus, getServerDisconnectedDuration } =
+    useSessionHelpers();
 
   // Build hierarchical groups: project:branch -> tree of instances
   const groups = useMemo(() => {
@@ -110,6 +117,28 @@ export const GroupedView = React.memo((): React.ReactElement => {
     return `${(tokens / 1000000).toFixed(2)}M`;
   }
 
+  // Helper to format disconnected duration
+  function formatDisconnectedDuration(ms: number): string {
+    if (ms < 60000) return `${Math.floor(ms / 1000)}s`;
+    return `${Math.floor(ms / 60000)}m`;
+  }
+
+  // Get server status for a group (based on first instance with serverUrl)
+  function getGroupServerStatus(trees: TreeNode[]): {
+    status: "connecting" | "connected" | "disconnected" | null;
+    duration: number;
+  } {
+    const allInstances = flattenTree(trees);
+    for (const inst of allInstances) {
+      if (inst.serverUrl) {
+        const status = getServerStatus(inst.serverUrl);
+        const duration = getServerDisconnectedDuration(inst.serverUrl);
+        return { status, duration };
+      }
+    }
+    return { status: null, duration: 0 };
+  }
+
   if (groups.length === 0)
     return (
       <Box paddingX={1} paddingY={1}>
@@ -124,12 +153,29 @@ export const GroupedView = React.memo((): React.ReactElement => {
       {groups.map(([groupKey, groupTrees]) => {
         const isCollapsed = collapsedGroups.has(groupKey);
         const stats = getGroupStats(groupTrees);
+        const serverInfo = getGroupServerStatus(groupTrees);
         const [dirName, branch] = groupKey.split(":");
         const groupIndex = currentIndex;
         currentIndex++;
         const isGroupSelected = selectedIndex === groupIndex;
 
         const statusParts: React.ReactNode[] = [];
+
+        // Show connection status indicator
+        if (serverInfo.status === "disconnected") {
+          statusParts.push(
+            <Text key="disconn" color="red">
+              ⚡{formatDisconnectedDuration(serverInfo.duration)}
+            </Text>,
+          );
+        } else if (serverInfo.status === "connecting") {
+          statusParts.push(
+            <Text key="conn" color="yellow">
+              ◐
+            </Text>,
+          );
+        }
+
         if (stats.idle > 0)
           statusParts.push(
             <Text key="idle" color="green">

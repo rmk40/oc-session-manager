@@ -5,8 +5,11 @@
 // - Maintaining SSE connections to each server
 // - Auto-reconnection with exponential backoff
 // - Session state from SDK queries
+// - Desktop notifications for status changes
 
-import { DEBUG_FLAGS } from "./config.js";
+import { DEBUG_FLAGS, NOTIFY_ENABLED } from "./config.js";
+import { exec } from "node:child_process";
+import { platform } from "node:os";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -85,6 +88,34 @@ const RECONNECT_BASE_DELAY = 1000; // 1 second
 const RECONNECT_MAX_DELAY = 30000; // 30 seconds
 const STALE_SERVER_TIMEOUT = 180000; // 3 minutes
 const SESSION_REFRESH_INTERVAL = 30000; // 30 seconds
+
+// ---------------------------------------------------------------------------
+// Desktop Notifications
+// ---------------------------------------------------------------------------
+
+function escapeShell(str: string): string {
+  return str.replace(/'/g, "'\\''");
+}
+
+function showDesktopNotification(
+  title: string,
+  subtitle: string,
+  message: string,
+): void {
+  if (!NOTIFY_ENABLED) return;
+
+  const os = platform();
+
+  if (os === "darwin") {
+    const script = `display notification "${escapeShell(message)}" with title "${escapeShell(title)}" subtitle "${escapeShell(subtitle)}"`;
+    exec(`osascript -e '${script}'`, () => {});
+  } else if (os === "linux") {
+    exec(
+      `notify-send "${escapeShell(title)}" "${escapeShell(subtitle)}: ${escapeShell(message)}"`,
+      () => {},
+    );
+  }
+}
 
 // ---------------------------------------------------------------------------
 // SDK Loading
@@ -374,6 +405,7 @@ export class ConnectionManager {
         if (sessionId) {
           const session = this.sessions.get(sessionId);
           if (session) {
+            const oldStatus = session.status;
             const newStatus = (event.properties?.status as string) || "idle";
             session.status = newStatus as "idle" | "running" | "pending";
 
@@ -384,6 +416,14 @@ export class ConnectionManager {
             ) {
               session.busySince = Date.now();
             } else if (newStatus === "idle") {
+              // Notify on busy -> idle transition
+              if (oldStatus === "running" || oldStatus === "pending") {
+                showDesktopNotification(
+                  "OpenCode",
+                  `${server.project}:${server.branch}`,
+                  session.title || "Session is idle",
+                );
+              }
               session.busySince = undefined;
             }
 
@@ -402,12 +442,21 @@ export class ConnectionManager {
         if (sessionId) {
           const session = this.sessions.get(sessionId);
           if (session) {
+            const tool = event.properties?.tool as string;
             session.pendingPermission = {
               id: event.properties?.permissionID as string,
-              tool: event.properties?.tool as string,
+              tool,
               args: event.properties?.args as Record<string, unknown>,
               message: event.properties?.message as string,
             };
+
+            // Notify about permission request
+            showDesktopNotification(
+              "OpenCode - Permission Required",
+              `${server.project}:${server.branch}`,
+              `Tool: ${tool}`,
+            );
+
             this.notifySessionsUpdate(server);
           }
         }

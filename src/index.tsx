@@ -109,10 +109,14 @@ function startUdpServer(
         return;
       }
 
-      // Handle legacy oc.status format
+      // Legacy oc.status format - kept for backward compatibility with old plugins
+      // Will be removed once all plugins are updated to oc.announce format
       if (data.type === "oc.status" && data.instanceId) {
+        if (DEBUG_FLAGS.udp) {
+          console.error(`[UDP] Legacy oc.status from ${data.instanceId}`);
+        }
+
         // Use composite key: instanceId + sessionID to differentiate parent from child sessions
-        // Child sessions (sub-agents) share the same process but have different sessionIDs
         const instanceKey = data.sessionID
           ? `${data.instanceId}:${data.sessionID}`
           : data.instanceId;
@@ -125,7 +129,7 @@ function startUdpServer(
         // Update instance with composite key
         setInstance(instanceKey, {
           ...data,
-          instanceId: instanceKey, // Use composite key for consistency
+          instanceId: instanceKey,
           ts: data.ts || Date.now(),
           _isChildSession: !!data.parentID,
         });
