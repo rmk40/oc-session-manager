@@ -10,7 +10,10 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsup src/index.ts --format esm --outDir dist --clean && mv dist/index.js dist/oc-session-manager.mjs",
-    "start": "node dist/oc-session-manager.mjs"
+    "start": "node dist/oc-session-manager.mjs",
+    "install-plugin": "mkdir -p ~/.config/opencode/plugin && cp opencode/plugin/oc-session-manager.js ~/.config/opencode/plugin/",
+    "link-plugin": "mkdir -p ~/.config/opencode/plugin && ln -sf \"$(pwd)/opencode/plugin/oc-session-manager.js\" ~/.config/opencode/plugin/",
+    "uninstall-plugin": "rm -f ~/.config/opencode/plugin/oc-session-manager.js"
   },
   "keywords": ["opencode", "tui", "session", "monitor"],
   "license": "MIT",
