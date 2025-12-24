@@ -28,8 +28,6 @@ export const SessionView = React.memo((): React.ReactElement => {
   return (
     <Box 
       flexDirection="column" 
-      borderStyle="round" 
-      borderColor="cyan"
       paddingX={1}
       flexGrow={1}
     >

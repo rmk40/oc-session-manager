@@ -190,15 +190,46 @@ export function App(): React.ReactElement {
   }
 
   // Views
-  if (sessionViewActive) return <SessionView />
+  if (sessionViewActive) {
+    return (
+      <SpinnerContext.Provider value={spinnerFrame}>
+        <Box 
+          width={terminalSize.columns} 
+          height={terminalSize.rows}
+          borderStyle="round"
+          borderColor="cyan"
+        >
+          <SessionView />
+        </Box>
+      </SpinnerContext.Provider>
+    )
+  }
+  
   if (detailView) {
     const inst = instances.get(detailView)
-    if (inst) return <DetailView instance={inst} />
+    if (inst) return (
+      <SpinnerContext.Provider value={spinnerFrame}>
+        <Box 
+          width={terminalSize.columns} 
+          height={terminalSize.rows}
+          borderStyle="round"
+          borderColor="cyan"
+        >
+          <DetailView instance={inst} />
+        </Box>
+      </SpinnerContext.Provider>
+    )
   }
 
   return (
     <SpinnerContext.Provider value={spinnerFrame}>
-      <Box flexDirection="column" width="100%" height="100%">
+      <Box 
+        flexDirection="column" 
+        width={terminalSize.columns}
+        height={terminalSize.rows}
+        borderStyle="round"
+        borderColor="cyan"
+      >
         <Header />
         <Box flexDirection="column" flexGrow={1} overflow="hidden">
           {viewMode === 'grouped' ? <GroupedView /> : <FlatView />}

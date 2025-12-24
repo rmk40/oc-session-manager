@@ -30,8 +30,6 @@ export const DetailView = React.memo(({ instance }: DetailViewProps): React.Reac
   return (
     <Box 
       flexDirection="column" 
-      borderStyle="round" 
-      borderColor="cyan"
       paddingX={1}
       flexGrow={1}
     >

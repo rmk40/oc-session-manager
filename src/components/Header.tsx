@@ -26,6 +26,11 @@ export const Header = React.memo((): React.ReactElement => {
     <Box 
       flexDirection="column" 
       paddingX={1}
+      borderStyle="single"
+      borderBottom
+      borderTop={false}
+      borderLeft={false}
+      borderRight={false}
       marginBottom={1}
     >
       <Box>
@@ -34,13 +39,12 @@ export const Header = React.memo((): React.ReactElement => {
         </Text>
       </Box>
       
-      <Box gap={2}>
+      <Box gap={2} marginBottom={1}>
         <Text color="green">● IDLE: {idle}</Text>
         <Text color="yellow">○ BUSY: {busy}</Text>
         <Text color="gray">◌ STALE: {stale}</Text>
         <Text dimColor>TOTAL: {total}</Text>
       </Box>
-      <Text dimColor>{"─".repeat(40)}</Text>
     </Box>
   )
 })

@@ -13,9 +13,13 @@ export const HelpBar = React.memo((): React.ReactElement => {
     <Box 
       flexDirection="column"
       paddingX={1} 
+      borderStyle="single"
+      borderTop
+      borderBottom={false}
+      borderLeft={false}
+      borderRight={false}
       marginTop={1}
     >
-      <Text dimColor>{"─".repeat(40)}</Text>
       <Text dimColor>
         q: quit  ↑↓/jk: nav  Enter: watch  i: info  d: remove  c: clear stale  Tab: {viewToggle}
       </Text>
