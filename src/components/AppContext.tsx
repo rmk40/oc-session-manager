@@ -199,18 +199,18 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
   const tick = useCallback((now?: number) => setCurrentTime(now || Date.now()), [])
 
   const setInstance = useCallback((id: string, instance: Instance) => {
+    const oldInst = instancesRef.current.get(id)
     instancesRef.current.set(id, instance)
     dirtyRef.current = true
     
     setBusySince(prevBusy => {
-      const oldInst = instancesRef.current.get(id)
       const getStat = (inst: Instance | undefined) => {
           if (!inst) return null
           if (Date.now() - inst.ts > STALE_TIMEOUT_MS || inst.status === 'shutdown') return 'stale'
           return ['busy', 'running', 'pending'].includes(inst.status) ? 'busy' : 'idle'
       }
       const newStatus = getStat(instance)
-      const oldStatus = oldInst ? getStat(oldInst) : null
+      const oldStatus = getStat(oldInst)
 
       if (newStatus === 'busy' && oldStatus !== 'busy') {
         return new Map(prevBusy).set(id, Date.now())

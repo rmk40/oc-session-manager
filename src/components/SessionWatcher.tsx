@@ -1,6 +1,6 @@
 // Session connection and event handling
 
-import React, { useEffect } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { useAppState, useAppActions, useViewState } from './AppContext.js'
 import { getOpencodeClient, isSdkAvailable } from '../sdk.js'
 import { formatToolArgs, wrapText } from '../utils.js'
@@ -11,6 +11,8 @@ export const SessionWatcher = React.memo((): null => {
   const actions = useAppActions()
   
   const termWidth = terminalSize.columns
+  const lastRefreshRef = useRef<number>(0)
+  const refreshTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     if (!sessionViewActive || !sessionViewInstance || !sessionViewSessionID) return
@@ -69,18 +71,14 @@ export const SessionWatcher = React.memo((): null => {
         try {
             const rootId = await findRootId(client, sessionViewSessionID!)
             await buildTree(client, rootId, 0, sessions)
+            if (!isActive) return
             actions.setSessionViewSessions(sessions)
             
             const idx = sessions.findIndex(s => s.id === sessionViewSessionID)
             if (idx >= 0) actions.setSessionViewSessionIndex(idx)
 
             // Load messages
-            const msgResp = await client.session.messages({ path: { id: sessionViewSessionID! } })
-            if (isActive) {
-                const msgs = msgResp.data || []
-                actions.setSessionViewMessages(msgs)
-                renderLines(msgs)
-            }
+            await refreshMessages(client)
         } catch (e) {}
     }
 
@@ -93,6 +91,7 @@ export const SessionWatcher = React.memo((): null => {
     }
 
     async function buildTree(client: any, id: string, depth: number, acc: any[]) {
+        if (!isActive) return
         try {
             const resp = await client.session.get({ path: { id } })
             if (!resp.data) return
@@ -115,7 +114,7 @@ export const SessionWatcher = React.memo((): null => {
         switch (event.type) {
             case 'message.part.updated':
             case 'message.updated':
-                refreshMessages(client)
+                throttledRefreshMessages(client)
                 break
             case 'session.status':
                 actions.setSessionViewStatus(String(props.status || 'idle'))
@@ -132,7 +131,21 @@ export const SessionWatcher = React.memo((): null => {
         }
     }
 
+    function throttledRefreshMessages(client: any) {
+        const now = Date.now()
+        if (now - lastRefreshRef.current < 250) {
+            if (refreshTimerRef.current) return
+            refreshTimerRef.current = setTimeout(() => {
+                refreshTimerRef.current = null
+                refreshMessages(client)
+            }, 250)
+            return
+        }
+        refreshMessages(client)
+    }
+
     async function refreshMessages(client: any) {
+        lastRefreshRef.current = Date.now()
         try {
             const msgResp = await client.session.messages({ path: { id: sessionViewSessionID! } })
             if (isActive) {
@@ -145,7 +158,10 @@ export const SessionWatcher = React.memo((): null => {
 
     function renderLines(messages: Message[]) {
         const lines: RenderedLine[] = []
-        for (const msg of messages) {
+        // Only render last 50 messages to prevent Ink overhead
+        const displayMessages = messages.length > 50 ? messages.slice(-50) : messages
+        
+        for (const msg of displayMessages) {
             const role = msg.info.role
             const roleLabel = role === 'user' ? 'User' : 'Assistant'
             const cost = msg.info.cost ? ` $${msg.info.cost.toFixed(4)}` : ''
@@ -164,7 +180,7 @@ export const SessionWatcher = React.memo((): null => {
         if (part.type === 'text') {
             const text = part.text || ''
             for (const line of text.split('\n')) {
-                const wrapped = wrapText(line, termWidth - 4)
+                const wrapped = wrapText(line, termWidth - 10)
                 for (const w of wrapped) lines.push({ type: 'text', plain: `│ ${w}`, text: `│ ${w}` })
             }
         } else if (part.type === 'tool') {
@@ -175,21 +191,21 @@ export const SessionWatcher = React.memo((): null => {
             lines.push({ type: 'tool-start', plain: `│ ┌─ ${icon} ${state.title || name}`, text: `│ ┌─ ${icon} ${state.title || name}` })
             const args = formatToolArgs(state.input || {})
             if (args) {
-                for (const w of wrapText(args, termWidth - 8)) lines.push({ type: 'tool-args', plain: `│ │ ${w}`, text: `│ │ ${w}` })
+                for (const w of wrapText(args, termWidth - 14)) lines.push({ type: 'tool-args', plain: `│ │ ${w}`, text: `│ │ ${w}` })
             }
             if (status === 'completed' && state.output) {
                 const outLines = state.output.split('\n')
-                for (const line of outLines.slice(0, 10)) {
-                    for (const w of wrapText(line, termWidth - 8)) lines.push({ type: 'tool-result', plain: `│ │ ${w}`, text: `│ │ ${w}` })
+                for (const line of outLines.slice(0, 5)) {
+                    for (const w of wrapText(line, termWidth - 14)) lines.push({ type: 'tool-result', plain: `│ │ ${w}`, text: `│ │ ${w}` })
                 }
-                if (outLines.length > 10) lines.push({ type: 'tool-result', plain: `│ │ ...`, text: `│ │ ...` })
+                if (outLines.length > 5) lines.push({ type: 'tool-result', plain: `│ │ ...`, text: `│ │ ...` })
             }
             lines.push({ type: 'tool-end', plain: `│ └${'─'.repeat(30)}`, text: `│ └${'─'.repeat(30)}` })
         } else if (part.type === 'reasoning') {
             lines.push({ type: 'reasoning-start', plain: `│ ┌─ Thinking...`, text: `│ ┌─ Thinking...` })
             const text = part.reasoning || part.text || ''
             for (const line of text.split('\n')) {
-                for (const w of wrapText(line, termWidth - 8)) lines.push({ type: 'reasoning', plain: `│ │ ${w}`, text: `│ │ ${w}` })
+                for (const w of wrapText(line, termWidth - 14)) lines.push({ type: 'reasoning', plain: `│ │ ${w}`, text: `│ │ ${w}` })
             }
             lines.push({ type: 'reasoning-end', plain: `│ └${'─'.repeat(30)}`, text: `│ └${'─'.repeat(30)}` })
         }
@@ -200,6 +216,7 @@ export const SessionWatcher = React.memo((): null => {
     return () => {
       isActive = false
       if (eventAbort) eventAbort.abort()
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
     }
   }, [sessionViewActive, sessionViewInstance, sessionViewSessionID, termWidth])
 

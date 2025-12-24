@@ -48,15 +48,25 @@ export function App(): React.ReactElement {
   }, [hasBusyInstances])
   
   useInput((input, key) => {
-    if (sessionViewActive) return
-    if (detailView) {
-        if (key.escape || key.return) actions.setDetailView(null)
-        return
-    }
-
+    // Global shortcuts
     if (input === 'q' || (key.ctrl && input === 'c')) {
       exit()
       return
+    }
+
+    // Session view shortcuts
+    if (sessionViewActive) {
+        if (key.escape) {
+            actions.exitSessionView()
+            actions.setSelectedIndex(-1)
+        }
+        return
+    }
+
+    // Detail view shortcuts
+    if (detailView) {
+        if (key.escape || key.return) actions.setDetailView(null)
+        return
     }
     
     const itemCount = getSelectableItemCount()
