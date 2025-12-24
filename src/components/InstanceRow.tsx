@@ -50,38 +50,32 @@ export const InstanceRow = React.memo(({
   const costStr = formatCost(instance.cost)
   const tokStr = formatTokens(instance.tokens?.total)
   
-  // Adaptive title length based on terminal width
   let maxTitleWidth = 40
   if (width > 120) maxTitleWidth = width - 80
   else if (width > 100) maxTitleWidth = width - 60
   
   const title = instance.title ?? 'Ready'
   const truncatedTitle = title.length > maxTitleWidth ? title.slice(0, maxTitleWidth - 3) + '...' : title
-  
   const prefix = showProject ? `${instance.dirName || '?'}:${instance.branch || '?'}:` : ''
 
   return (
     <Box>
       <Text color={isSelected ? "cyan" : undefined} bold={isSelected}>
-        {' '.repeat(Math.max(0, indent - 2))}
-        {isSelected ? "➔ " : "  "}
-        <StatusIndicator instance={instance} />
-        {' '}{prefix}{shortSession}{'  '}
-        <Text dimColor={!isSelected}>"{truncatedTitle}"</Text>
+        {' '.repeat(Math.max(0, indent - 2))}{isSelected ? "➔ " : "  "}<StatusIndicator instance={instance} />{' '}{prefix}{shortSession}{'  '}<Text dimColor={!isSelected}>"{truncatedTitle}"</Text>
       </Text>
       
-      {width > 110 && instance.model && (
+      {width > 110 && instance.model ? (
         <Text dimColor>  [{instance.model}]</Text>
-      )}
+      ) : null}
       
       <Box flexGrow={1} />
       
       <Box>
-        {costStr && <Text color="magenta">  {costStr}</Text>}
-        {tokStr && <Text color="magenta"> {tokStr}</Text>}
-        {width > 130 && instance.tokens && (
+        {costStr ? <Text color="magenta">  {costStr}</Text> : null}
+        {tokStr ? <Text color="magenta"> {tokStr}</Text> : null}
+        {width > 130 && instance.tokens ? (
           <Text dimColor> ({instance.tokens.input}i/{instance.tokens.output}o)</Text>
-        )}
+        ) : null}
         <Text>{"  "}</Text>
         <RelativeTime instance={instance} />
       </Box>

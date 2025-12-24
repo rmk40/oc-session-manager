@@ -78,10 +78,7 @@ export const GroupedView = React.memo((): React.ReactElement => {
           <Box key={groupKey} flexDirection="column">
             <Box>
               <Text color={isGroupSelected ? "cyan" : undefined} bold={isGroupSelected}>
-                {isGroupSelected ? "➔ " : "  "}
-                {isCollapsed ? "▶ " : "▼ "}
-                <Text bold>{dirName}</Text>
-                <Text color="cyan">:{branch}</Text>
+                {isGroupSelected ? "➔ " : "  "}{isCollapsed ? "▶ " : "▼ "}<Text bold>{dirName}</Text><Text color="cyan">:{branch}</Text>
               </Text>
               <Text>{"  "}</Text>
               {statusParts.map((part, i) => (
@@ -90,8 +87,8 @@ export const GroupedView = React.memo((): React.ReactElement => {
                   {i < statusParts.length - 1 ? <Text>{" "}</Text> : null}
                 </React.Fragment>
               ))}
-              {costStr && <Text dimColor> {costStr}</Text>}
-              {tokStr && <Text dimColor> {tokStr}</Text>}
+              {costStr ? <Text dimColor> {costStr}</Text> : null}
+              {tokStr ? <Text dimColor> {tokStr}</Text> : null}
             </Box>
             
             {!isCollapsed && groupInstances.map((inst) => {

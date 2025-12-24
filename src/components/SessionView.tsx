@@ -36,9 +36,9 @@ export const SessionView = React.memo((): React.ReactElement => {
       <Box justifyContent="space-between" borderStyle="single" borderBottom borderTop={false} borderLeft={false} borderRight={false} marginBottom={1}>
         <Box>
           <Text bold color="cyan">{identifier}</Text>
-          {sessionViewSessionTitle && (
+          {sessionViewSessionTitle ? (
             <Text dimColor> "{truncate(sessionViewSessionTitle, width > 100 ? 60 : 30)}"</Text>
-          )}
+          ) : null}
           <Text color="yellow">{navIndicator}</Text>
         </Box>
         <Text color={statusColor}>{statusIcon} {status.toUpperCase()}</Text>
@@ -63,30 +63,31 @@ export const SessionView = React.memo((): React.ReactElement => {
           </Box>
 
           {/* Right Sidebar (only if wide) - shows session list or instance details */}
-          {width > 150 && inst && (
+          {width > 150 && inst ? (
               <Box width={40} borderStyle="single" borderLeft borderTop={false} borderBottom={false} borderRight={false} paddingLeft={1} flexDirection="column">
                   <Text bold dimColor underline>SESSION INFO</Text>
                   <Text>Model: {inst.model || '?'}</Text>
                   <Text>Cost: ${inst.cost?.toFixed(4) || '0'}</Text>
                   <Text>Tokens: {inst.tokens?.total || 0}</Text>
                   <Spacer />
-                  {hasMultipleSessions && (
+                  {hasMultipleSessions ? (
                       <Box flexDirection="column">
                           <Text bold dimColor underline>OTHER SESSIONS</Text>
                           {sessionViewSessions.slice(0, 10).map((sess, idx) => (
-                              <Text key={sess.id} color={idx === sessionViewSessionIndex ? "cyan" : undefined}>
-                                  <Text>{idx === sessionViewSessionIndex ? "➔" : " "}</Text>
-                                  <Text>{truncate(sess.title || sess.id?.slice(0, 8), 30)}</Text>
-                              </Text>
+                              <Box key={sess.id}>
+                                  <Text color={idx === sessionViewSessionIndex ? "cyan" : undefined}>
+                                    {idx === sessionViewSessionIndex ? "➔ " : "  "}{truncate(sess.title || sess.id?.slice(0, 8), 30)}
+                                  </Text>
+                              </Box>
                           ))}
                       </Box>
-                  )}
+                  ) : null}
               </Box>
-          )}
+          ) : null}
       </Box>
       
       {/* Session navigation bar (Horizontal if wide, original if not) */}
-      {hasMultipleSessions && width <= 150 && (
+      {hasMultipleSessions && width <= 150 ? (
         <Box borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false}>
           {sessionViewSessions.map((sess: any, idx: number) => {
             const isCurrent = idx === sessionViewSessionIndex
@@ -97,23 +98,20 @@ export const SessionView = React.memo((): React.ReactElement => {
             
             return (
               <Box key={sess.id || `session-${idx}`} marginRight={1}>
-                <Text inverse={isCurrent} color={sessColor}>
-                  <Text>{sessIcon}</Text>
-                  <Text> {label}</Text>
-                </Text>
+                <Text inverse={isCurrent} color={sessColor}>{sessIcon} {label}</Text>
               </Box>
             )
           })}
         </Box>
-      )}
+      ) : null}
       
       {/* Help bar at bottom */}
       <Box borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false} marginTop={1}>
         <Text dimColor>
           <Text>[Esc] back  [↑↓] scroll</Text>
-          {hasMultipleSessions && <Text>  [Ctrl+←/→] switch session</Text>}
-          {(status === 'busy' || status === 'running' || status === 'pending') && <Text>  [a]bort</Text>}
-          {sessionViewPendingPermissions.size > 0 && <Text>  [p]ermissions</Text>}
+          {hasMultipleSessions ? <Text>  [Ctrl+←/→] switch session</Text> : null}
+          {(status === 'busy' || status === 'running' || status === 'pending') ? <Text>  [a]bort</Text> : null}
+          {sessionViewPendingPermissions.size > 0 ? <Text>  [p]ermissions</Text> : null}
           <Text>  [m]essage</Text>
         </Text>
       </Box>
@@ -165,7 +163,7 @@ function PermissionPrompt(): React.ReactElement {
       <Box flexDirection="column" borderStyle="single" borderTop borderBottom={false} borderLeft={false} borderRight={false} paddingY={1}>
         <Text color="yellow" bold>PERMISSION REQUEST</Text>
         <Text>Tool: <Text color="cyan">{perm.tool || 'unknown'}</Text></Text>
-        {perm.args && <Text dimColor>{truncate(formatArgs(perm.args), 80)}</Text>}
+        {perm.args ? <Text dimColor>{truncate(formatArgs(perm.args), 80)}</Text> : null}
         <Box marginTop={1}>
             <Text dimColor>[a]llow  [A]llow always  [d]eny  [D]eny always  [Esc] dismiss</Text>
         </Box>
