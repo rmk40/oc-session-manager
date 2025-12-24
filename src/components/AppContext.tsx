@@ -110,11 +110,10 @@ export function useStatusHelpers() {
 }
 
 // Legacy hook for compatibility
-export function useApp(): { state: AppState; actions: AppActions & ReturnType<typeof useStatusHelpers> } {
+export function useApp(): { state: AppState; actions: AppActions } {
   const state = useAppState()
   const actions = useAppActions()
-  const helpers = useStatusHelpers()
-  return { state, actions: { ...actions, ...helpers } }
+  return { state, actions }
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +146,8 @@ export function AppProvider({ children }: { children: ReactNode }): React.ReactE
   const [sessionViewSessionIndex, setSessionViewSessionIndexInternal] = useState(0)
   const [sessionViewSessionTitle, setSessionViewSessionTitleInternal] = useState('')
 
+  // 1. STABLE ACTIONS (No dependencies)
+  
   const tick = useCallback((now?: number) => setCurrentTime(now || Date.now()), [])
   const setInstance = useCallback((id: string, instance: Instance) => {
     setInstances(prev => {

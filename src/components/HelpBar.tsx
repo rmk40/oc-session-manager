@@ -12,11 +12,9 @@ export const HelpBar = React.memo((): React.ReactElement => {
   return (
     <Box 
       paddingX={1} 
-      borderStyle="single" 
-      borderTop 
-      borderBottom={false} 
-      borderLeft={false} 
-      borderRight={false}
+      borderStyle="round" 
+      borderColor="cyan"
+      marginTop={1}
     >
       <Text dimColor>
         q: quit  ↑↓/jk: nav  Enter: watch  i: info  d: remove  c: clear stale  Tab: {viewToggle}

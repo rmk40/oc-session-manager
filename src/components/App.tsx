@@ -22,10 +22,24 @@ export function App(): React.ReactElement {
   const { getEffectiveStatus } = useStatusHelpers()
   
   const [spinnerFrame, setSpinnerFrame] = useState(0)
-  
-  // Get terminal dimensions
-  const termWidth = stdout?.columns || 80
-  const termHeight = stdout?.rows || 24
+  const [terminalSize, setTerminalSize] = useState({
+    columns: stdout?.columns || 80,
+    rows: stdout?.rows || 24
+  })
+
+  // Track terminal resize stably
+  useEffect(() => {
+    const handleResize = () => {
+      setTerminalSize({
+        columns: process.stdout.columns || 80,
+        rows: process.stdout.rows || 24
+      })
+    }
+    process.stdout.on('resize', handleResize)
+    return () => {
+      process.stdout.off('resize', handleResize)
+    }
+  }, [])
   
   // Check if any instance is busy (for spinner animation)
   const hasBusyInstances = useMemo(() => {
@@ -36,6 +50,7 @@ export function App(): React.ReactElement {
   }, [state.instances, getEffectiveStatus])
   
   // Main animation loop - updates currentTime
+  // Stable dependency because actions.tick is memoized without dependencies in AppProvider
   useEffect(() => {
     const interval = setInterval(() => {
       actions.tick()
@@ -183,7 +198,7 @@ export function App(): React.ReactElement {
   if (state.sessionViewActive) {
     return (
       <SpinnerContext.Provider value={spinnerFrame}>
-        <Box width={termWidth} height={termHeight}>
+        <Box width="100%" height="100%">
           <SessionView />
         </Box>
       </SpinnerContext.Provider>
@@ -194,7 +209,7 @@ export function App(): React.ReactElement {
     const inst = state.instances.get(state.detailView)
     if (inst) return (
       <SpinnerContext.Provider value={spinnerFrame}>
-        <Box width={termWidth} height={termHeight}>
+        <Box width="100%" height="100%">
           <DetailView instance={inst} />
         </Box>
       </SpinnerContext.Provider>
@@ -205,10 +220,9 @@ export function App(): React.ReactElement {
     <SpinnerContext.Provider value={spinnerFrame}>
       <Box 
         flexDirection="column" 
-        width={termWidth} 
-        height={termHeight}
-        borderStyle="round"
-        borderColor="cyan"
+        width="100%"
+        height="100%"
+        paddingX={1}
       >
         <Header />
         <Box flexDirection="column" flexGrow={1} overflow="hidden">

@@ -25,21 +25,17 @@ export const Header = React.memo((): React.ReactElement => {
     <Box 
       flexDirection="column" 
       paddingX={1}
-      borderStyle="single"
-      borderBottom
-      borderTop={false}
-      borderLeft={false}
-      borderRight={false}
+      borderStyle="round"
+      borderColor="cyan"
+      marginBottom={1}
     >
-      {/* Title row */}
       <Box>
         <Text bold color={isAnyBusy ? 'yellow' : 'cyan'}>
           {title}
         </Text>
       </Box>
       
-      {/* Status summary row */}
-      <Box gap={2} marginBottom={1}>
+      <Box gap={2}>
         <Text color="green">● IDLE ({idle})</Text>
         <Text color="yellow">○ BUSY ({busy})</Text>
         <Text color="gray">◌ STALE ({stale})</Text>
