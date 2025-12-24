@@ -1,24 +1,15 @@
 // Grouped view - instances organized by project:branch
 
-import React, { useState, useEffect } from 'react'
+import React, { useContext } from 'react'
 import { Box, Text } from 'ink'
 import { useApp } from './AppContext.js'
+import { SpinnerContext } from './App.js'
 import { InstanceRow } from './InstanceRow.js'
 import type { Instance } from '../types.js'
 
-const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-
 export function GroupedView(): React.ReactElement {
   const { state, actions } = useApp()
-  const [spinnerFrame, setSpinnerFrame] = useState(0)
-  
-  // Animate spinner for busy instances
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setSpinnerFrame(f => (f + 1) % SPINNER.length)
-    }, 100)
-    return () => clearInterval(interval)
-  }, [])
+  const spinnerFrame = useContext(SpinnerContext)
   
   // Group instances by project:branch
   const groups = getGroupedInstances()

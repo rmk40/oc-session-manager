@@ -1,6 +1,6 @@
 // Main App component - Full-screen TUI using Ink best practices
 
-import React from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Box, useApp as useInkApp, useInput, useStdout } from 'ink'
 import { useApp } from './AppContext.js'
 import { Header } from './Header.js'
@@ -11,10 +11,37 @@ import { SessionView } from './SessionView.js'
 import { HelpBar } from './HelpBar.js'
 import type { Instance } from '../types.js'
 
+// Spinner context to share frame across components
+export const SpinnerContext = React.createContext(0)
+
 export function App(): React.ReactElement {
   const { exit } = useInkApp()
   const { state, actions } = useApp()
   const { stdout } = useStdout()
+  
+  // Spinner animation - only runs when there are busy instances
+  const [spinnerFrame, setSpinnerFrame] = useState(0)
+  
+  // Check if any instance is busy
+  const hasBusyInstances = useMemo(() => {
+    for (const inst of state.instances.values()) {
+      if (actions.getEffectiveStatus(inst) === 'busy') {
+        return true
+      }
+    }
+    return false
+  }, [state.instances, actions])
+  
+  // Only animate spinner when there are busy instances
+  useEffect(() => {
+    if (!hasBusyInstances) return
+    
+    const interval = setInterval(() => {
+      setSpinnerFrame(f => (f + 1) % 10)
+    }, 80) // Slightly slower than 100ms
+    
+    return () => clearInterval(interval)
+  }, [hasBusyInstances])
   
   // Get terminal dimensions for full-screen layout
   const termWidth = stdout?.columns || 80
@@ -295,13 +322,15 @@ export function App(): React.ReactElement {
   // Render session view (full screen)
   if (state.sessionViewActive) {
     return (
-      <Box 
-        flexDirection="column" 
-        width={termWidth} 
-        height={termHeight}
-      >
-        <SessionView width={termWidth} height={termHeight} />
-      </Box>
+      <SpinnerContext.Provider value={spinnerFrame}>
+        <Box 
+          flexDirection="column" 
+          width={termWidth} 
+          height={termHeight}
+        >
+          <SessionView width={termWidth} height={termHeight} />
+        </Box>
+      </SpinnerContext.Provider>
     )
   }
   
@@ -310,34 +339,38 @@ export function App(): React.ReactElement {
     const inst = state.instances.get(state.detailView)
     if (inst) {
       return (
-        <Box 
-          flexDirection="column" 
-          width={termWidth} 
-          height={termHeight}
-        >
-          <DetailView instance={inst} width={termWidth} height={termHeight} />
-        </Box>
+        <SpinnerContext.Provider value={spinnerFrame}>
+          <Box 
+            flexDirection="column" 
+            width={termWidth} 
+            height={termHeight}
+          >
+            <DetailView instance={inst} width={termWidth} height={termHeight} />
+          </Box>
+        </SpinnerContext.Provider>
       )
     }
   }
 
   // Main view - full screen with header, content, and help bar
   return (
-    <Box 
-      flexDirection="column" 
-      width={termWidth} 
-      height={termHeight}
-    >
-      {/* Header - fixed height */}
-      <Header />
-      
-      {/* Content area - fills remaining space */}
-      <Box flexDirection="column" flexGrow={1} overflow="hidden">
-        {state.viewMode === 'grouped' ? <GroupedView /> : <FlatView />}
+    <SpinnerContext.Provider value={spinnerFrame}>
+      <Box 
+        flexDirection="column" 
+        width={termWidth} 
+        height={termHeight}
+      >
+        {/* Header - fixed height */}
+        <Header />
+        
+        {/* Content area - fills remaining space */}
+        <Box flexDirection="column" flexGrow={1} overflow="hidden">
+          {state.viewMode === 'grouped' ? <GroupedView /> : <FlatView />}
+        </Box>
+        
+        {/* Help bar - fixed height at bottom */}
+        <HelpBar />
       </Box>
-      
-      {/* Help bar - fixed height at bottom */}
-      <HelpBar />
-    </Box>
+    </SpinnerContext.Provider>
   )
 }

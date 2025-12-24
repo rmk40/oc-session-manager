@@ -5,7 +5,7 @@ import { Text } from 'ink'
 import { useApp } from './AppContext.js'
 import type { Instance } from '../types.js'
 
-const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+const SPINNER_CHARS = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
 interface InstanceRowProps {
   instance: Instance
@@ -38,7 +38,7 @@ export function InstanceRow({
       statusColor = 'green'
       break
     case 'busy':
-      statusIcon = longRunning ? '!' : SPINNER[spinnerFrame]
+      statusIcon = longRunning ? '!' : SPINNER_CHARS[spinnerFrame % SPINNER_CHARS.length]
       statusColor = longRunning ? 'red' : 'yellow'
       break
     default:
