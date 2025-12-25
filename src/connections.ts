@@ -707,20 +707,90 @@ export class ConnectionManager {
     try {
       this.debugLog(`Fetching initial sessions from ${server.serverUrl}...`);
 
-      // Get active sessions from status endpoint
+      // 1. Get active sessions from status endpoint to know which are busy
       const statusResponse = await server.client.session
         .status()
         .catch(() => ({ data: {} }));
       const statusMap = statusResponse.data || {};
-      const activeSessionIds = Object.keys(statusMap);
 
-      this.debugLog(`Status has ${activeSessionIds.length} active sessions`);
+      // 2. Get all sessions from list endpoint
+      const listResponse = await server.client.session
+        .list()
+        .catch(() => ({ data: [] }));
+      const allSessions = (listResponse.data || []) as any[];
+      const sessionMap = new Map<string, any>(
+        allSessions.map((s) => [s.id, s]),
+      );
 
-      // Fetch details for each active session
-      for (const sessionId of activeSessionIds) {
+      const activeSessionIds = new Set(Object.keys(statusMap));
+      const relevantSessionIds = new Set<string>();
+
+      // Heuristic: identify the "current" sessions attached to the TUI.
+      // We want to show the active tree(s) and prune old idle branches.
+      const RECENT_IDLE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+      const now = Date.now();
+
+      // 1. First, include all active sessions and their ancestors
+      for (const activeId of activeSessionIds) {
+        relevantSessionIds.add(activeId);
+        let curr = sessionMap.get(activeId);
+        while (curr?.parentID) {
+          relevantSessionIds.add(curr.parentID);
+          curr = sessionMap.get(curr.parentID);
+        }
+      }
+
+      // 2. Identify the latest root session for this directory
+      const normDir = server.directory?.replace(/\/+$/, "");
+      const matchingRoots = allSessions
+        .filter(
+          (s) => !s.parentID && s.directory?.replace(/\/+$/, "") === normDir,
+        )
+        .sort((a, b) => {
+          const ta = a.time?.updated || a.time?.created || 0;
+          const tb = b.time?.updated || b.time?.created || 0;
+          return tb - ta;
+        });
+
+      if (matchingRoots.length > 0) {
+        relevantSessionIds.add(matchingRoots[0].id);
+      }
+
+      // 3. For all sessions we've decided to keep so far, also include their
+      // children if they are active OR were recently updated.
+      // We do this iteratively to catch the whole active/recent tree.
+      let added;
+      do {
+        added = false;
+        for (const s of allSessions) {
+          if (
+            s.parentID &&
+            relevantSessionIds.has(s.parentID) &&
+            !relevantSessionIds.has(s.id)
+          ) {
+            const isActive = activeSessionIds.has(s.id);
+            const isRecent =
+              (s.time?.updated || s.time?.created || 0) >
+              now - RECENT_IDLE_THRESHOLD_MS;
+
+            if (isActive || isRecent) {
+              relevantSessionIds.add(s.id);
+              added = true;
+            }
+          }
+        }
+      } while (added);
+
+      this.debugLog(
+        `Server has ${allSessions.length} total sessions, keeping ${relevantSessionIds.size} relevant to current TUI context`,
+      );
+
+      // 4. Fetch details for all relevant sessions
+      for (const sessionId of relevantSessionIds) {
         const statusObj = statusMap[sessionId];
         const status =
-          typeof statusObj === "string" ? statusObj : statusObj?.type || "busy";
+          typeof statusObj === "string" ? statusObj : statusObj?.type || "idle";
+
         await this.fetchSessionDetails(server, sessionId, status);
       }
     } catch (err: any) {
