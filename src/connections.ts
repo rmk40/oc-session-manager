@@ -46,7 +46,7 @@ export interface AnnouncePacket {
   serverUrl: string;
   project: string;
   directory: string;
-  branch: string;
+  branch: string | null;
   instanceId: string;
   ts: number;
 }
@@ -62,7 +62,7 @@ export interface Server {
   instanceId: string;
   project: string;
   directory: string;
-  branch: string;
+  branch: string | null;
 
   // Connection state
   status: "connecting" | "connected" | "disconnected";
@@ -467,9 +467,12 @@ export class ConnectionManager {
 
             // Notify on active -> idle transition
             if (wasActive && statusType === "idle") {
+              const context = server.branch
+                ? `${server.project}:${server.branch}`
+                : server.project;
               showDesktopNotification(
                 "OpenCode",
-                `${server.project}:${server.branch}`,
+                context,
                 updatedSession.title || "Session is idle",
               );
             }
@@ -509,9 +512,12 @@ export class ConnectionManager {
             };
 
             if (wasActive) {
+              const context = server.branch
+                ? `${server.project}:${server.branch}`
+                : server.project;
               showDesktopNotification(
                 "OpenCode",
-                `${server.project}:${server.branch}`,
+                context,
                 updatedSession.title || "Session is idle",
               );
             }
@@ -575,9 +581,12 @@ export class ConnectionManager {
               },
             };
 
+            const context = server.branch
+              ? `${server.project}:${server.branch}`
+              : server.project;
             showDesktopNotification(
               "OpenCode - Permission Required",
-              `${server.project}:${server.branch}`,
+              context,
               `Tool: ${tool}`,
             );
 
