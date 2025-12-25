@@ -2,12 +2,7 @@
 
 import React, { useMemo } from "react";
 import { Box, Text } from "ink";
-import {
-  useAppState,
-  useViewState,
-  useStatusHelpers,
-  useSessionHelpers,
-} from "./AppContext.js";
+import { useAppState, useViewState, useSessionHelpers } from "./AppContext.js";
 import { InstanceRow } from "./InstanceRow.js";
 import type { Instance } from "../types.js";
 
@@ -18,11 +13,42 @@ interface TreeNode {
 }
 
 export const GroupedView = React.memo((): React.ReactElement => {
-  const { instances, servers } = useAppState();
+  const { sessions, servers } = useAppState();
   const { selectedIndex, collapsedGroups } = useViewState();
-  const { getEffectiveStatus } = useStatusHelpers();
-  const { getServerStatus, getServerDisconnectedDuration } =
+  const { getSessionStatus, getServerStatus, getServerDisconnectedDuration } =
     useSessionHelpers();
+
+  // Convert Sessions to legacy-compatible Instances for the view
+  const instances = useMemo(() => {
+    const instMap = new Map<string, Instance>();
+    for (const session of sessions.values()) {
+      const server = Array.from(servers.values()).find(
+        (s) => s.serverUrl === session.serverUrl,
+      );
+      if (!server) continue;
+
+      instMap.set(session.id, {
+        instanceId: session.id,
+        sessionID: session.id,
+        parentID: session.parentID,
+        status: session.status === "running" ? "busy" : session.status,
+        project: server.project,
+        directory: session.directory || server.directory,
+        dirName: server.project,
+        branch: server.branch,
+        serverUrl: server.serverUrl,
+        title: session.title,
+        ts: session.discoveredAt || Date.now(),
+        cost: session.cost,
+
+        tokens: session.tokens,
+        model: session.model,
+        _isChildSession: !!session.parentID,
+        _fromServer: true,
+      } as Instance);
+    }
+    return instMap;
+  }, [sessions, servers]);
 
   // Build hierarchical groups: project:branch -> tree of instances
   const groups = useMemo(() => {
@@ -59,16 +85,20 @@ export const GroupedView = React.memo((): React.ReactElement => {
         const directChildren = children.filter(
           (c) => c.parentID === parent.sessionID,
         );
-        // Sort children by timestamp
-        directChildren.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+        // Sort children by ID for stability
+        directChildren.sort((a, b) =>
+          (a.instanceId || "").localeCompare(b.instanceId || ""),
+        );
         for (const child of directChildren) {
           node.children.push(buildTree(child, depth + 1));
         }
         return node;
       }
 
-      // Sort roots by timestamp
-      roots.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+      // Sort roots by ID
+      roots.sort((a, b) =>
+        (a.instanceId || "").localeCompare(b.instanceId || ""),
+      );
       const trees = roots.map((r) => buildTree(r, 0));
       result.push([groupKey, trees]);
     }
@@ -94,10 +124,11 @@ export const GroupedView = React.memo((): React.ReactElement => {
       cost = 0,
       tokens = 0;
     for (const inst of allInstances) {
-      const status = getEffectiveStatus(inst);
+      const status = getSessionStatus(inst.instanceId);
       if (status === "idle") idle++;
-      else if (status === "busy") busy++;
-      else stale++;
+      else if (status === "busy" || status === "pending") busy++;
+      else if (status === "disconnected") stale++;
+
       cost += inst.cost || 0;
       tokens += inst.tokens?.total || 0;
     }
@@ -117,7 +148,6 @@ export const GroupedView = React.memo((): React.ReactElement => {
     return `${(tokens / 1000000).toFixed(2)}M`;
   }
 
-  // Helper to format disconnected duration
   function formatDisconnectedDuration(ms: number): string {
     if (ms < 60000) return `${Math.floor(ms / 1000)}s`;
     return `${Math.floor(ms / 60000)}m`;
@@ -240,10 +270,6 @@ export const GroupedView = React.memo((): React.ReactElement => {
       const instIndex = currentIndex;
       currentIndex++;
       const isSelected = selectedIndex === instIndex;
-
-      // Build prefix for tree visualization
-      const prefix =
-        node.depth === 0 ? "" : parentPrefix + (isLast ? "└─ " : "├─ ");
 
       // Calculate indent: base indent (5) + tree depth
       const indent = 5 + node.depth * 3;

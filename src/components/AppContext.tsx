@@ -6,7 +6,6 @@ import React, {
   useState,
   useCallback,
   useMemo,
-  useRef,
   useEffect,
   type ReactNode,
 } from "react";
@@ -18,7 +17,7 @@ import type {
   Message,
   RenderedLine,
 } from "../types.js";
-import { STALE_TIMEOUT_MS, LONG_RUNNING_MS } from "../config.js";
+import { LONG_RUNNING_MS } from "../config.js";
 import type { Server, Session } from "../connections.js";
 
 // ---------------------------------------------------------------------------
@@ -26,12 +25,6 @@ import type { Server, Session } from "../connections.js";
 // ---------------------------------------------------------------------------
 
 export interface AppState {
-  // Legacy instance state (will be removed after migration)
-  instances: Map<string, Instance>;
-  busySince: Map<string, number>;
-  idleSince: Map<string, number>;
-
-  // New SDK-driven state (Phase 3)
   servers: Map<string, Server>;
   sessions: Map<string, Session>;
 }
@@ -61,9 +54,6 @@ export interface ViewState {
 }
 
 export interface AppActions {
-  setInstance: (id: string, instance: Instance) => void;
-  removeInstance: (id: string) => void;
-  clearStaleInstances: () => void;
   setViewMode: (mode: ViewMode) => void;
   setSelectedIndex: (idx: number) => void;
   toggleCollapsedGroup: (key: string) => void;
@@ -86,7 +76,6 @@ export interface AppActions {
   removePermission: (id: string) => void;
   tick: (now?: number) => void;
 
-  // New SDK-driven actions (Phase 3)
   updateServers: (servers: Server[]) => void;
   updateSessions: (sessions: Session[]) => void;
 }
@@ -123,42 +112,6 @@ export function useTime(): number {
   return useContext(TimeContext);
 }
 
-export function useStatusHelpers() {
-  const { busySince } = useAppState();
-  const currentTime = useTime();
-
-  const getEffectiveStatus = useCallback(
-    (instance: Instance): "idle" | "busy" | "stale" => {
-      const age = currentTime - instance.ts;
-      if (age > STALE_TIMEOUT_MS) return "stale";
-      if (instance.status === "shutdown") return "stale";
-      if (["busy", "running", "pending"].includes(instance.status))
-        return "busy";
-      return "idle";
-    },
-    [currentTime],
-  );
-
-  const isLongRunning = useCallback(
-    (instance: Instance): boolean => {
-      if (getEffectiveStatus(instance) !== "busy") return false;
-      const busyStart = busySince.get(instance.instanceId);
-      return busyStart ? currentTime - busyStart > LONG_RUNNING_MS : false;
-    },
-    [currentTime, getEffectiveStatus, busySince],
-  );
-
-  const getBusyDuration = useCallback(
-    (instance: Instance): number => {
-      const busyStart = busySince.get(instance.instanceId);
-      return busyStart ? currentTime - busyStart : 0;
-    },
-    [currentTime, busySince],
-  );
-
-  return { getEffectiveStatus, isLongRunning, getBusyDuration };
-}
-
 /**
  * Hook for SDK-driven session status helpers
  */
@@ -171,18 +124,16 @@ export function useSessionHelpers() {
       const session = sessions.get(sessionId);
       if (!session) return "idle";
 
-      // Check if server is disconnected
       const server = Array.from(servers.values()).find(
         (s) => s.serverUrl === session.serverUrl,
       );
       if (server && server.status === "disconnected") return "disconnected";
 
-      // Check for pending permission
       if (session.pendingPermission) return "pending";
 
-      // Map session status
-      if (session.status === "running") return "busy";
-      if (session.status === "pending") return "pending";
+      const status = String(session.status).toLowerCase();
+      if (status === "running" || status === "busy") return "busy";
+      if (status === "pending" || status === "retry") return "pending";
       return "idle";
     },
     [sessions, servers],
@@ -255,12 +206,8 @@ export function AppProvider({
   children: ReactNode;
 }): React.ReactElement {
   const { stdout } = useStdout();
-  const [instances, setInstances] = useState<Map<string, Instance>>(new Map());
-  const [busySince, setBusySince] = useState<Map<string, number>>(new Map());
-  const [idleSince, setIdleSince] = useState<Map<string, number>>(new Map());
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
 
-  // New SDK-driven state (Phase 3)
   const [servers, setServers] = useState<Map<string, Server>>(new Map());
   const [sessions, setSessions] = useState<Map<string, Session>>(new Map());
 
@@ -323,78 +270,10 @@ export function AppProvider({
     };
   }, []);
 
-  // Throttle state updates
-  const instancesRef = useRef<Map<string, Instance>>(new Map());
-  const dirtyRef = useRef(false);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (dirtyRef.current) {
-        setInstances(new Map(instancesRef.current));
-        dirtyRef.current = false;
-      }
-    }, 100); // Flush updates every 100ms
-    return () => clearInterval(interval);
-  }, []);
-
   const tick = useCallback(
     (now?: number) => setCurrentTime(now || Date.now()),
     [],
   );
-
-  const setInstance = useCallback((id: string, instance: Instance) => {
-    const oldInst = instancesRef.current.get(id);
-    instancesRef.current.set(id, instance);
-    dirtyRef.current = true;
-
-    setBusySince((prevBusy) => {
-      const getStat = (inst: Instance | undefined) => {
-        if (!inst) return null;
-        if (
-          Date.now() - inst.ts > STALE_TIMEOUT_MS ||
-          inst.status === "shutdown"
-        )
-          return "stale";
-        return ["busy", "running", "pending"].includes(inst.status)
-          ? "busy"
-          : "idle";
-      };
-      const newStatus = getStat(instance);
-      const oldStatus = getStat(oldInst);
-
-      if (newStatus === "busy" && oldStatus !== "busy") {
-        return new Map(prevBusy).set(id, Date.now());
-      }
-      return prevBusy;
-    });
-  }, []);
-
-  const removeInstance = useCallback((id: string) => {
-    instancesRef.current.delete(id);
-    setInstances(new Map(instancesRef.current));
-    setBusySince((prev) => {
-      if (!prev.has(id)) return prev;
-      const next = new Map(prev);
-      next.delete(id);
-      return next;
-    });
-    setIdleSince((prev) => {
-      if (!prev.has(id)) return prev;
-      const next = new Map(prev);
-      next.delete(id);
-      return next;
-    });
-  }, []);
-
-  const clearStaleInstances = useCallback(() => {
-    const now = Date.now();
-    for (const [id, inst] of instancesRef.current) {
-      if (now - inst.ts > STALE_TIMEOUT_MS || inst.status === "shutdown") {
-        instancesRef.current.delete(id);
-      }
-    }
-    setInstances(new Map(instancesRef.current));
-  }, []);
 
   const setViewMode = useCallback(
     (mode: ViewMode) => setViewModeInternal(mode),
@@ -518,7 +397,6 @@ export function AppProvider({
     });
   }, []);
 
-  // New SDK-driven actions (Phase 3)
   const updateServers = useCallback((serverList: Server[]) => {
     setServers(new Map(serverList.map((s) => [s.serverUrl, s])));
   }, []);
@@ -529,9 +407,6 @@ export function AppProvider({
 
   const actions = useMemo<AppActions>(
     () => ({
-      setInstance,
-      removeInstance,
-      clearStaleInstances,
       setViewMode,
       setSelectedIndex,
       toggleCollapsedGroup,
@@ -557,9 +432,6 @@ export function AppProvider({
       updateSessions,
     }),
     [
-      setInstance,
-      removeInstance,
-      clearStaleInstances,
       setViewMode,
       setSelectedIndex,
       toggleCollapsedGroup,
@@ -587,8 +459,8 @@ export function AppProvider({
   );
 
   const appState = useMemo<AppState>(
-    () => ({ instances, busySince, idleSince, servers, sessions }),
-    [instances, busySince, idleSince, servers, sessions],
+    () => ({ servers, sessions }),
+    [servers, sessions],
   );
 
   const viewState = useMemo<ViewState>(

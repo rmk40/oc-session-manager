@@ -29,7 +29,7 @@ const HOSTS = (process.env.OC_SESSION_HOST || "127.0.0.1")
 
 const PORT = parseInt(process.env.OC_SESSION_PORT, 10) || 19876;
 const DEBUG = process.env.OC_SESSION_DEBUG === "1";
-const HEARTBEAT_INTERVAL = 30_000;
+const HEARTBEAT_INTERVAL = 1_000; // 1 second - UDP is cheap
 
 const socket = createSocket("udp4");
 
@@ -54,6 +54,28 @@ function getGitBranch(cwd) {
   }
 }
 
+/**
+ * Discover the port this process is listening on using lsof.
+ * This is needed because the SDK's baseUrl is hardcoded to localhost:4096
+ * but each OpenCode instance may be on a different port.
+ */
+function discoverListeningPort() {
+  try {
+    const result = execSync(
+      `lsof -i -P -n -a -p ${process.pid} 2>/dev/null | grep LISTEN | head -1`,
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    );
+    // Output format: opencode 12345 user 12u IPv4 ... TCP 127.0.0.1:4096 (LISTEN)
+    const match = result.match(/:(\d+)\s+\(LISTEN\)/);
+    if (match) {
+      return parseInt(match[1], 10);
+    }
+  } catch {
+    // lsof failed or no listening ports found
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Plugin export
 // ---------------------------------------------------------------------------
@@ -69,26 +91,39 @@ export const OcSessionManager = async ({ project, directory, client }) => {
     `[oc-session-manager] Announcing to: ${HOSTS.join(", ")}:${PORT}`,
   );
 
-  // Discover server URL from SDK
+  // Discover server URL using lsof to find our actual listening port
+  // This is the most reliable method since the SDK's baseUrl is hardcoded to 4096
   let serverUrl = null;
-  async function discoverServerUrl() {
+
+  function discoverServerUrl() {
     if (serverUrl) return serverUrl;
-    try {
-      const resp = await client.session.list();
-      if (resp.response?.url) {
-        const url = new URL(resp.response.url);
-        serverUrl = `${url.protocol}//${url.host}`;
-        console.error(`[oc-session-manager] Server URL: ${serverUrl}`);
-      }
-    } catch (err) {
-      debug("Failed to discover server URL:", err.message);
+
+    // Primary method: Use lsof to find the port this process is listening on
+    const port = discoverListeningPort();
+    if (port) {
+      serverUrl = `http://127.0.0.1:${port}`;
+      console.error(`[oc-session-manager] Discovered server URL: ${serverUrl}`);
+      return serverUrl;
     }
-    return serverUrl;
+
+    // Fallback: Try to get from SDK client config (may be wrong if hardcoded)
+    const config = client._client?.getConfig?.();
+    if (config?.baseUrl) {
+      serverUrl = config.baseUrl;
+      console.error(
+        `[oc-session-manager] Server URL (from SDK config, may be incorrect): ${serverUrl}`,
+      );
+      return serverUrl;
+    }
+
+    debug("Could not discover server URL");
+    return null;
   }
 
   // Send announcement packet
   async function sendAnnounce() {
-    if (!serverUrl) await discoverServerUrl();
+    // Try to discover serverUrl on each announce until we get it
+    await discoverServerUrl();
 
     const payload = {
       type: "oc.announce",

@@ -4,7 +4,7 @@
 // It uses the SDK to fetch session data and subscribe to SSE events.
 
 import React, { useEffect, useRef } from "react";
-import { useAppState, useAppActions, useViewState } from "./AppContext.js";
+import { useAppActions, useViewState } from "./AppContext.js";
 import { getOpencodeClient, isSdkAvailable } from "../sdk.js";
 import { formatToolArgs, wrapText } from "../utils.js";
 import type { Message, MessagePart, RenderedLine } from "../types.js";

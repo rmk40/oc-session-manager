@@ -2,14 +2,15 @@
 
 import React, { useContext } from "react";
 import { Text, Box } from "ink";
-import {
-  useTime,
-  useStatusHelpers,
-  useViewState,
-  useAppState,
-} from "./AppContext.js";
+import { useSessionHelpers, useViewState } from "./AppContext.js";
 import { SpinnerContext } from "./App.js";
 import type { Instance } from "../types.js";
+import {
+  formatDuration,
+  formatRelativeTime,
+  formatCost,
+  formatTokens,
+} from "../utils.js";
 
 const SPINNER_CHARS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -22,28 +23,14 @@ interface InstanceRowProps {
 }
 
 const StatusIndicator = React.memo(({ instance }: { instance: Instance }) => {
-  const { getEffectiveStatus, isLongRunning } = useStatusHelpers();
-  const { sessions, servers } = useAppState();
+  const { getSessionStatus, isSessionLongRunning } = useSessionHelpers();
   const spinnerFrame = useContext(SpinnerContext);
 
-  // Check for pending permission in SDK session
-  const sdkSession = instance.sessionID
-    ? sessions.get(instance.sessionID)
-    : null;
-  const hasPendingPermission = sdkSession?.pendingPermission != null;
+  const status = getSessionStatus(instance.instanceId);
+  const longRunning = isSessionLongRunning(instance.instanceId);
 
-  // Check for server disconnected
-  const server = instance.serverUrl
-    ? servers.get(instance.serverUrl)
-    : undefined;
-  const isDisconnected = server?.status === "disconnected";
-
-  if (isDisconnected) return <Text color="gray">◌</Text>;
-  if (hasPendingPermission) return <Text color="yellow">◆</Text>;
-
-  const status = getEffectiveStatus(instance);
-  const longRunning = isLongRunning(instance);
-
+  if (status === "disconnected") return <Text color="gray">◌</Text>;
+  if (status === "pending") return <Text color="yellow">◆</Text>;
   if (status === "idle") return <Text color="green">●</Text>;
   if (status === "busy") {
     if (longRunning) return <Text color="red">!</Text>;
@@ -57,14 +44,13 @@ const StatusIndicator = React.memo(({ instance }: { instance: Instance }) => {
 });
 
 const RelativeTime = React.memo(({ instance }: { instance: Instance }) => {
-  const currentTime = useTime();
-  const { getEffectiveStatus, getBusyDuration } = useStatusHelpers();
-  const status = getEffectiveStatus(instance);
-  const busyDuration = getBusyDuration(instance);
+  const { getSessionStatus, getSessionBusyDuration } = useSessionHelpers();
+  const status = getSessionStatus(instance.instanceId);
+  const busyDuration = getSessionBusyDuration(instance.instanceId);
   const timeStr =
-    status === "busy"
+    status === "busy" || status === "pending"
       ? formatDuration(busyDuration)
-      : formatRelativeTime(instance.ts, currentTime);
+      : formatRelativeTime(instance.ts);
   return <Text dimColor>{timeStr.padStart(8)}</Text>;
 });
 
@@ -78,6 +64,8 @@ export const InstanceRow = React.memo(
   }: InstanceRowProps): React.ReactElement => {
     const { terminalSize } = useViewState();
     const width = terminalSize.columns;
+    const { getSessionStatus } = useSessionHelpers();
+    const status = getSessionStatus(instance.instanceId);
 
     const shortSession = instance.sessionID?.slice(-4) ?? "----";
     const costStr = formatCost(instance.cost);
@@ -87,7 +75,7 @@ export const InstanceRow = React.memo(
     if (width > 120) maxTitleWidth = width - 80;
     else if (width > 100) maxTitleWidth = width - 60;
 
-    const title = instance.title ?? "Ready";
+    const title = instance.title || `[${status.toUpperCase()}]`;
     const truncatedTitle =
       title.length > maxTitleWidth
         ? title.slice(0, maxTitleWidth - 3) + "..."
@@ -133,38 +121,3 @@ export const InstanceRow = React.memo(
     );
   },
 );
-
-function formatCost(cost: number | undefined): string {
-  if (!cost || cost === 0) return "";
-  if (cost < 0.01) return `$${cost.toFixed(4)}`;
-  return `$${cost.toFixed(2)}`;
-}
-
-function formatTokens(tokens: number | undefined): string {
-  if (!tokens) return "";
-  if (tokens < 1000) return String(tokens);
-  if (tokens < 1000000) return `${(tokens / 1000).toFixed(1)}k`;
-  return `${(tokens / 1000000).toFixed(2)}M`;
-}
-
-function formatRelativeTime(ts: number, currentTime: number): string {
-  const diff = currentTime - ts;
-  if (diff < 1000) return "now";
-  if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`;
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  return `${Math.floor(diff / 86400000)}d ago`;
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${Math.floor(ms / 1000)}s`;
-  if (ms < 3600000) {
-    const mins = Math.floor(ms / 60000);
-    const secs = Math.floor((ms % 60000) / 1000);
-    return `${mins}m ${secs}s`;
-  }
-  const hours = Math.floor(ms / 3600000);
-  const mins = Math.floor((ms % 3600000) / 60000);
-  return `${hours}h ${mins}m`;
-}

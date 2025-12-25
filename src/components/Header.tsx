@@ -1,32 +1,35 @@
 // Header component with status summary - fixed height
 
-import React from 'react'
-import { Box, Text } from 'ink'
-import { useAppState, useViewState, useStatusHelpers } from './AppContext.js'
+import React from "react";
+import { Box, Text } from "ink";
+import { useAppState, useViewState, useSessionHelpers } from "./AppContext.js";
 
 export const Header = React.memo((): React.ReactElement => {
-  const { instances } = useAppState()
-  const { viewMode, terminalSize } = useViewState()
-  const { getEffectiveStatus } = useStatusHelpers()
-  
-  const width = terminalSize.columns
+  const { sessions } = useAppState();
+  const { viewMode, terminalSize } = useViewState();
+  const { getSessionStatus } = useSessionHelpers();
+
+  const width = terminalSize.columns;
 
   // Count instances by status
-  let idle = 0, busy = 0, stale = 0
-  for (const inst of instances.values()) {
-    const status = getEffectiveStatus(inst)
-    if (status === 'idle') idle++
-    else if (status === 'busy') busy++
-    else stale++
+  let idle = 0,
+    busy = 0,
+    stale = 0;
+  for (const session of sessions.values()) {
+    const status = getSessionStatus(session.id);
+    if (status === "idle") idle++;
+    else if (status === "busy" || status === "pending") busy++;
+    else if (status === "disconnected") stale++;
   }
-  
-  const total = instances.size
-  const isAnyBusy = busy > 0
-  const title = viewMode === 'flat' ? 'oc-session-manager (flat)' : 'oc-session-manager'
-  
+
+  const total = sessions.size;
+  const isAnyBusy = busy > 0;
+  const title =
+    viewMode === "flat" ? "oc-session-manager (flat)" : "oc-session-manager";
+
   return (
-    <Box 
-      flexDirection={width > 100 ? "row" : "column"} 
+    <Box
+      flexDirection={width > 100 ? "row" : "column"}
       paddingX={1}
       borderStyle="single"
       borderBottom
@@ -38,23 +41,25 @@ export const Header = React.memo((): React.ReactElement => {
       alignItems={width > 100 ? "center" : "flex-start"}
     >
       <Box>
-        <Text bold color={isAnyBusy ? 'yellow' : 'cyan'}>
+        <Text bold color={isAnyBusy ? "yellow" : "cyan"}>
           {title.toUpperCase()}
         </Text>
       </Box>
-      
+
       <Box gap={2} marginBottom={width > 100 ? 0 : 1}>
         <Text color="green">● IDLE: {idle}</Text>
         <Text color="yellow">○ BUSY: {busy}</Text>
         <Text color="gray">◌ STALE: {stale}</Text>
         <Text dimColor>TOTAL: {total}</Text>
       </Box>
-      
+
       {width > 120 && (
-          <Box>
-              <Text dimColor>Terminal: {width}x{terminalSize.rows}</Text>
-          </Box>
+        <Box>
+          <Text dimColor>
+            Terminal: {width}x{terminalSize.rows}
+          </Text>
+        </Box>
       )}
     </Box>
-  )
-})
+  );
+});

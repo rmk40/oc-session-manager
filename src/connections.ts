@@ -10,6 +10,32 @@
 import { DEBUG_FLAGS, NOTIFY_ENABLED } from "./config.js";
 import { exec } from "node:child_process";
 import { platform } from "node:os";
+import { appendFileSync } from "node:fs";
+import { getOpencodeClient, initSdk as initSdkFromSdk } from "./sdk.js";
+import { escapeShell } from "./utils.js";
+
+function trace(msg: string) {
+  if (DEBUG_FLAGS.state) {
+    try {
+      appendFileSync(
+        "/tmp/oc-session-manager-trace.log",
+        `[${new Date().toISOString()}] ${msg}\n`,
+      );
+    } catch {}
+  }
+}
+
+function normalizeUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    let host = u.hostname.toLowerCase();
+    if (host === "localhost") host = "127.0.0.1";
+    const port = u.port ? `:${u.port}` : "";
+    return `${u.protocol}//${host}${port}${u.pathname}`.replace(/\/+$/, "");
+  } catch {
+    return url.toLowerCase().replace(/\/+$/, "");
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -54,9 +80,9 @@ export interface Session {
   serverUrl: string;
   parentID?: string;
 
-  // From SDK
+  // From SDK/SSE
   title?: string;
-  status: "idle" | "running" | "pending";
+  status: "idle" | "busy" | "running" | "pending";
   directory?: string;
 
   // Tracked locally
@@ -73,6 +99,7 @@ export interface Session {
   tokens?: { input: number; output: number; total: number };
   model?: string;
   statsUpdatedAt?: number;
+  discoveredAt: number;
 }
 
 export interface SSEEvent {
@@ -92,10 +119,6 @@ const SESSION_REFRESH_INTERVAL = 30000; // 30 seconds
 // ---------------------------------------------------------------------------
 // Desktop Notifications
 // ---------------------------------------------------------------------------
-
-function escapeShell(str: string): string {
-  return str.replace(/'/g, "'\\''");
-}
 
 function showDesktopNotification(
   title: string,
@@ -118,23 +141,11 @@ function showDesktopNotification(
 }
 
 // ---------------------------------------------------------------------------
-// SDK Loading
+// SDK Loading (uses shared SDK from sdk.ts)
 // ---------------------------------------------------------------------------
 
-let createOpencodeClient: any = null;
-
-export async function initSdk(): Promise<boolean> {
-  if (createOpencodeClient) return true;
-
-  try {
-    const sdk = await import("@opencode-ai/sdk");
-    createOpencodeClient = sdk.createOpencodeClient;
-    return true;
-  } catch {
-    console.error("[connections] Failed to load @opencode-ai/sdk");
-    return false;
-  }
-}
+// Re-export initSdk for backward compatibility
+export { initSdk as initSdk } from "./sdk.js";
 
 // ---------------------------------------------------------------------------
 // Connection Manager Class
@@ -154,6 +165,7 @@ export type SessionsUpdateCallback = (
 export class ConnectionManager {
   private servers = new Map<string, Server>();
   private sessions = new Map<string, Session>();
+  private fetchingSessions = new Set<string>();
   private sessionEventCallbacks: SessionEventCallback[] = [];
   private connectionChangeCallbacks: ConnectionChangeCallback[] = [];
   private sessionsUpdateCallbacks: SessionsUpdateCallback[] = [];
@@ -182,19 +194,40 @@ export class ConnectionManager {
   async handleAnnounce(packet: AnnouncePacket): Promise<void> {
     const { serverUrl, instanceId } = packet;
 
-    const existing = this.servers.get(serverUrl);
-    if (existing) {
-      // Update last announce time
-      existing.lastAnnounce = packet.ts || Date.now();
-      existing.project = packet.project;
-      existing.branch = packet.branch;
-      existing.directory = packet.directory;
+    if (!serverUrl) {
+      this.debugLog(`Announce from ${instanceId} has no serverUrl, ignoring`);
       return;
     }
 
-    // New server - add and connect
+    const normUrl = normalizeUrl(serverUrl);
+    const existing = this.servers.get(normUrl);
+
+    if (existing) {
+      // Detect restart: instanceId changed for the same URL
+      if (
+        existing.instanceId &&
+        instanceId &&
+        existing.instanceId !== instanceId
+      ) {
+        this.debugLog(
+          `Server ${normUrl} restarted (ID ${existing.instanceId} -> ${instanceId})`,
+        );
+        this.removeServer(normUrl);
+        // Fall through to create new server entry
+      } else {
+        // Update last announce time
+        existing.lastAnnounce = packet.ts || Date.now();
+        existing.project = packet.project;
+        existing.branch = packet.branch;
+        existing.directory = packet.directory;
+        existing.instanceId = instanceId;
+        return;
+      }
+    }
+
+    // New server (or restart) - add and connect
     const server: Server = {
-      serverUrl,
+      serverUrl: normUrl,
       instanceId,
       project: packet.project,
       directory: packet.directory,
@@ -204,8 +237,8 @@ export class ConnectionManager {
       reconnectAttempts: 0,
     };
 
-    this.servers.set(serverUrl, server);
-    this.debugLog(`New server: ${serverUrl}`);
+    this.servers.set(normUrl, server);
+    this.debugLog(`New server: ${normUrl} - connecting...`);
 
     // Connect asynchronously
     this.connectToServer(server);
@@ -215,7 +248,7 @@ export class ConnectionManager {
    * Handle a shutdown packet from UDP
    */
   handleShutdown(packet: ShutdownPacket): void {
-    // Find server by instanceId
+    // Find server by instanceId or URL (though URL is primary key now)
     for (const [url, server] of this.servers) {
       if (server.instanceId === packet.instanceId) {
         this.removeServer(url);
@@ -228,10 +261,11 @@ export class ConnectionManager {
    * Remove a server and clean up
    */
   removeServer(serverUrl: string): void {
-    const server = this.servers.get(serverUrl);
+    const normUrl = normalizeUrl(serverUrl);
+    const server = this.servers.get(normUrl);
     if (!server) return;
 
-    this.debugLog(`Removing server: ${serverUrl}`);
+    this.debugLog(`Removing server: ${normUrl}`);
 
     // Abort SSE connection
     if (server.eventAbort) {
@@ -240,12 +274,13 @@ export class ConnectionManager {
 
     // Remove sessions from this server
     for (const [id, session] of this.sessions) {
-      if (session.serverUrl === serverUrl) {
+      if (normalizeUrl(session.serverUrl) === normUrl) {
+        trace(`Deleting session ${id} because server ${normUrl} was removed`);
         this.sessions.delete(id);
       }
     }
 
-    this.servers.delete(serverUrl);
+    this.servers.delete(normUrl);
   }
 
   /**
@@ -259,7 +294,7 @@ export class ConnectionManager {
    * Get a server by URL
    */
   getServer(serverUrl: string): Server | undefined {
-    return this.servers.get(serverUrl);
+    return this.servers.get(normalizeUrl(serverUrl));
   }
 
   // ---------------------------------------------------------------------------
@@ -270,35 +305,46 @@ export class ConnectionManager {
    * Connect to an OpenCode server
    */
   private async connectToServer(server: Server): Promise<void> {
-    if (!createOpencodeClient) {
-      const loaded = await initSdk();
-      if (!loaded) {
-        server.status = "disconnected";
-        server.disconnectedAt = Date.now();
-        this.notifyConnectionChange(server.serverUrl, "disconnected");
-        return;
-      }
+    // Ensure SDK is initialized
+    const loaded = await initSdkFromSdk();
+    if (!loaded) {
+      this.debugLog(`SDK not available, cannot connect to ${server.serverUrl}`);
+      server.status = "disconnected";
+      server.disconnectedAt = Date.now();
+      this.notifyConnectionChange(server.serverUrl, "disconnected");
+      return;
     }
 
     try {
+      this.debugLog(`Connecting to ${server.serverUrl}...`);
       server.status = "connecting";
       this.notifyConnectionChange(server.serverUrl, "connecting");
 
       // Create SDK client
-      server.client = createOpencodeClient({ baseUrl: server.serverUrl });
+      server.client = getOpencodeClient(server.serverUrl);
+      if (!server.client) {
+        throw new Error("Failed to create SDK client");
+      }
+      this.debugLog(`SDK client created for ${server.serverUrl}`);
 
       // Fetch initial sessions
       await this.fetchSessions(server);
 
       // Subscribe to SSE events
+      this.debugLog(`Subscribing to SSE events for ${server.serverUrl}...`);
       await this.subscribeToEvents(server);
 
       server.status = "connected";
       server.reconnectAttempts = 0;
       this.notifyConnectionChange(server.serverUrl, "connected");
-      this.debugLog(`Connected to ${server.serverUrl}`);
+      this.debugLog(`Connected to ${server.serverUrl} - SSE subscribed`);
     } catch (err: any) {
       this.debugLog(`Connection failed to ${server.serverUrl}: ${err.message}`);
+      if (err.stack) {
+        this.debugLog(
+          `Stack: ${err.stack.split("\n").slice(0, 3).join(" | ")}`,
+        );
+      }
       server.status = "disconnected";
       server.disconnectedAt = Date.now();
       this.notifyConnectionChange(server.serverUrl, "disconnected");
@@ -322,7 +368,7 @@ export class ConnectionManager {
 
     setTimeout(() => {
       // Only reconnect if server still exists and is still disconnected
-      const current = this.servers.get(server.serverUrl);
+      const current = this.servers.get(normalizeUrl(server.serverUrl));
       if (current && current.status === "disconnected") {
         this.connectToServer(current);
       }
@@ -359,8 +405,14 @@ export class ConnectionManager {
    */
   private async processSSEStream(server: Server, response: any): Promise<void> {
     try {
-      // The SDK returns an async iterator for SSE
-      for await (const event of response) {
+      // The SDK returns { stream: AsyncIterable } for SSE
+      const stream = response.stream;
+      if (!stream) {
+        this.debugLog(`SSE response has no stream for ${server.serverUrl}`);
+        throw new Error("SSE response has no stream property");
+      }
+
+      for await (const event of stream) {
         if (DEBUG_FLAGS?.sse) {
           console.error(`[SSE] ${server.serverUrl}: ${event.type}`);
         }
@@ -387,46 +439,86 @@ export class ConnectionManager {
     const sessionId = event.properties?.sessionID as string | undefined;
 
     switch (event.type) {
-      case "session.created":
-        if (sessionId) {
-          this.fetchSession(server, sessionId);
-        }
-        break;
-
-      case "session.deleted":
-        if (sessionId) {
-          this.sessions.delete(sessionId);
-          this.notifySessionsUpdate(server);
-        }
+      case "server.connected":
+        this.debugLog(`Server connected: ${server.serverUrl}`);
         break;
 
       case "session.status":
+        if (sessionId) {
+          const statusObj = event.properties?.status as any;
+          const statusType = (
+            typeof statusObj === "string"
+              ? statusObj
+              : statusObj?.type || "idle"
+          ) as "idle" | "running" | "pending";
+
+          const session = this.sessions.get(sessionId);
+          if (session) {
+            const wasActive =
+              session.status === "running" ||
+              session.status === "pending" ||
+              session.status === "busy";
+
+            // Create new object to ensure identity change for React
+            const updatedSession: Session = {
+              ...session,
+              status: statusType,
+            };
+
+            // Notify on active -> idle transition
+            if (wasActive && statusType === "idle") {
+              showDesktopNotification(
+                "OpenCode",
+                `${server.project}:${server.branch}`,
+                updatedSession.title || "Session is idle",
+              );
+            }
+
+            if (statusType !== "idle" && !updatedSession.busySince) {
+              updatedSession.busySince = Date.now();
+            } else if (statusType === "idle") {
+              updatedSession.busySince = undefined;
+            }
+
+            trace(`Updating session ${sessionId} status to ${statusType}`);
+            this.sessions.set(sessionId, updatedSession);
+            this.notifySessionsUpdate(server);
+          } else if (statusType !== "idle") {
+            // New active session - fetch details
+            trace(
+              `Discovered new active session ${sessionId} via status event`,
+            );
+            this.fetchSessionDetails(server, sessionId, statusType);
+          }
+        }
+        break;
+
       case "session.idle":
         if (sessionId) {
           const session = this.sessions.get(sessionId);
           if (session) {
-            const oldStatus = session.status;
-            const newStatus = (event.properties?.status as string) || "idle";
-            session.status = newStatus as "idle" | "running" | "pending";
+            const wasActive =
+              session.status === "running" ||
+              session.status === "pending" ||
+              session.status === "busy";
 
-            // Track busy start time
-            if (
-              (newStatus === "running" || newStatus === "pending") &&
-              !session.busySince
-            ) {
-              session.busySince = Date.now();
-            } else if (newStatus === "idle") {
-              // Notify on busy -> idle transition
-              if (oldStatus === "running" || oldStatus === "pending") {
-                showDesktopNotification(
-                  "OpenCode",
-                  `${server.project}:${server.branch}`,
-                  session.title || "Session is idle",
-                );
-              }
-              session.busySince = undefined;
+            const updatedSession: Session = {
+              ...session,
+              status: "idle",
+              busySince: undefined,
+            };
+
+            if (wasActive) {
+              showDesktopNotification(
+                "OpenCode",
+                `${server.project}:${server.branch}`,
+                updatedSession.title || "Session is idle",
+              );
             }
-
+            trace(
+              `Updating session ${sessionId} to idle via session.idle event`,
+            );
+            this.sessions.set(sessionId, updatedSession);
             this.notifySessionsUpdate(server);
           }
         }
@@ -434,7 +526,37 @@ export class ConnectionManager {
 
       case "session.updated":
         if (sessionId) {
-          this.fetchSession(server, sessionId);
+          const session = this.sessions.get(sessionId);
+          if (session) {
+            const info = event.properties?.info as
+              | { title?: string; parentID?: string; directory?: string }
+              | undefined;
+            if (info) {
+              const updatedSession: Session = {
+                ...session,
+                title: info.title ?? session.title,
+                parentID: info.parentID ?? session.parentID,
+                directory: info.directory ?? session.directory,
+              };
+              trace(`Updating session ${sessionId} info`);
+              this.sessions.set(sessionId, updatedSession);
+              this.notifySessionsUpdate(server);
+            }
+          } else {
+            // Discovered new session via update
+            trace(
+              `Discovered new session ${sessionId} via session.updated event`,
+            );
+            this.fetchSessionDetails(server, sessionId, "idle");
+          }
+        }
+        break;
+
+      case "session.deleted":
+        if (sessionId) {
+          trace(`Deleting session ${sessionId} due to session.deleted event`);
+          this.sessions.delete(sessionId);
+          this.notifySessionsUpdate(server);
         }
         break;
 
@@ -443,20 +565,23 @@ export class ConnectionManager {
           const session = this.sessions.get(sessionId);
           if (session) {
             const tool = event.properties?.tool as string;
-            session.pendingPermission = {
-              id: event.properties?.permissionID as string,
-              tool,
-              args: event.properties?.args as Record<string, unknown>,
-              message: event.properties?.message as string,
+            const updatedSession: Session = {
+              ...session,
+              pendingPermission: {
+                id: event.properties?.permissionID as string,
+                tool,
+                args: event.properties?.args as Record<string, unknown>,
+                message: event.properties?.message as string,
+              },
             };
 
-            // Notify about permission request
             showDesktopNotification(
               "OpenCode - Permission Required",
               `${server.project}:${server.branch}`,
               `Tool: ${tool}`,
             );
 
+            this.sessions.set(sessionId, updatedSession);
             this.notifySessionsUpdate(server);
           }
         }
@@ -466,7 +591,11 @@ export class ConnectionManager {
         if (sessionId) {
           const session = this.sessions.get(sessionId);
           if (session) {
-            session.pendingPermission = undefined;
+            const updatedSession: Session = {
+              ...session,
+              pendingPermission: undefined,
+            };
+            this.sessions.set(sessionId, updatedSession);
             this.notifySessionsUpdate(server);
           }
         }
@@ -479,42 +608,121 @@ export class ConnectionManager {
     }
   }
 
+  /**
+   * Fetch session details and stats
+   */
+  private async fetchSessionDetails(
+    server: Server,
+    sessionId: string,
+    status: string,
+  ): Promise<void> {
+    if (!server.client) return;
+    if (this.fetchingSessions.has(sessionId)) return;
+
+    this.fetchingSessions.add(sessionId);
+
+    try {
+      const response = await server.client.session.get({
+        path: { id: sessionId },
+      });
+      const data = response.data;
+      if (!data) return;
+
+      // Fetch stats if available
+      let cost = 0;
+      let tokens = { input: 0, output: 0, total: 0 };
+      let model = "";
+
+      try {
+        const statsResp = await server.client.session.stats({
+          path: { id: sessionId },
+        });
+        if (statsResp.data) {
+          cost = statsResp.data.cost || 0;
+          tokens = statsResp.data.tokens || tokens;
+          model = statsResp.data.model || "";
+        }
+      } catch {
+        // Stats might not be available yet
+      }
+
+      const session: Session = {
+        id: data.id,
+        serverUrl: server.serverUrl,
+        parentID: data.parentID,
+        title: data.title,
+        status: status as any,
+        directory: data.directory,
+        busySince: status !== "idle" ? Date.now() : undefined,
+        cost,
+        tokens,
+        model,
+        statsUpdatedAt: Date.now(),
+        discoveredAt: Date.now(),
+      };
+
+      trace(`Adding/updating session ${session.id} (${session.status})`);
+      this.sessions.set(session.id, session);
+      this.notifySessionsUpdate(server);
+    } catch (err: any) {
+      this.debugLog(
+        `Failed to fetch session details ${sessionId}: ${err.message}`,
+      );
+    } finally {
+      this.fetchingSessions.delete(sessionId);
+    }
+  }
+
+  /**
+   * Abort a running session
+   */
+  async abortSession(sessionId: string): Promise<boolean> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return false;
+
+    const server = this.servers.get(normalizeUrl(session.serverUrl));
+    if (!server || !server.client) return false;
+
+    try {
+      await server.client.session.abort({
+        path: { id: sessionId },
+      });
+      return true;
+    } catch (err: any) {
+      this.debugLog(`Failed to abort session ${sessionId}: ${err.message}`);
+      return false;
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Session Management
   // ---------------------------------------------------------------------------
 
   /**
-   * Fetch all sessions from a server
+   * Fetch initial active sessions from a server
    */
   private async fetchSessions(server: Server): Promise<void> {
     if (!server.client) return;
 
     try {
-      const response = await server.client.session.list();
-      const sessions = response.data || [];
+      this.debugLog(`Fetching initial sessions from ${server.serverUrl}...`);
 
-      for (const sessionData of sessions) {
-        const session: Session = {
-          id: sessionData.id,
-          serverUrl: server.serverUrl,
-          parentID: sessionData.parentID,
-          title: sessionData.title,
-          status: sessionData.status || "idle",
-          directory: sessionData.directory,
-        };
+      // Get active sessions from status endpoint
+      const statusResponse = await server.client.session
+        .status()
+        .catch(() => ({ data: {} }));
+      const statusMap = statusResponse.data || {};
+      const activeSessionIds = Object.keys(statusMap);
 
-        // Track busy start time
-        if (session.status === "running" || session.status === "pending") {
-          session.busySince = Date.now();
-        }
+      this.debugLog(`Status has ${activeSessionIds.length} active sessions`);
 
-        this.sessions.set(session.id, session);
-
-        // Fetch children recursively
-        await this.fetchChildren(server, session.id);
+      // Fetch details for each active session
+      for (const sessionId of activeSessionIds) {
+        const statusObj = statusMap[sessionId];
+        const status =
+          typeof statusObj === "string" ? statusObj : statusObj?.type || "busy";
+        await this.fetchSessionDetails(server, sessionId, status);
       }
-
-      this.notifySessionsUpdate(server);
     } catch (err: any) {
       this.debugLog(
         `Failed to fetch sessions from ${server.serverUrl}: ${err.message}`,
@@ -523,99 +731,7 @@ export class ConnectionManager {
   }
 
   /**
-   * Fetch a single session
-   */
-  private async fetchSession(server: Server, sessionId: string): Promise<void> {
-    if (!server.client) return;
-
-    try {
-      const response = await server.client.session.get({
-        path: { id: sessionId },
-      });
-      const sessionData = response.data;
-      if (!sessionData) return;
-
-      const existing = this.sessions.get(sessionId);
-      const session: Session = {
-        id: sessionData.id,
-        serverUrl: server.serverUrl,
-        parentID: sessionData.parentID,
-        title: sessionData.title,
-        status: sessionData.status || "idle",
-        directory: sessionData.directory,
-        // Preserve local state
-        busySince: existing?.busySince,
-        pendingPermission: existing?.pendingPermission,
-        cost: existing?.cost,
-        tokens: existing?.tokens,
-        model: existing?.model,
-        statsUpdatedAt: existing?.statsUpdatedAt,
-      };
-
-      // Track busy start time
-      if (
-        (session.status === "running" || session.status === "pending") &&
-        !session.busySince
-      ) {
-        session.busySince = Date.now();
-      } else if (session.status === "idle") {
-        session.busySince = undefined;
-      }
-
-      this.sessions.set(session.id, session);
-      this.notifySessionsUpdate(server);
-
-      // Fetch children
-      await this.fetchChildren(server, sessionId);
-    } catch (err: any) {
-      this.debugLog(`Failed to fetch session ${sessionId}: ${err.message}`);
-    }
-  }
-
-  /**
-   * Fetch child sessions recursively
-   */
-  private async fetchChildren(server: Server, parentId: string): Promise<void> {
-    if (!server.client) return;
-
-    try {
-      const response = await server.client.session.children({
-        path: { id: parentId },
-      });
-      const children = response.data || [];
-
-      for (const childData of children) {
-        const existing = this.sessions.get(childData.id);
-        const session: Session = {
-          id: childData.id,
-          serverUrl: server.serverUrl,
-          parentID: childData.parentID || parentId,
-          title: childData.title,
-          status: childData.status || "idle",
-          directory: childData.directory,
-          busySince: existing?.busySince,
-          pendingPermission: existing?.pendingPermission,
-        };
-
-        if (
-          (session.status === "running" || session.status === "pending") &&
-          !session.busySince
-        ) {
-          session.busySince = Date.now();
-        }
-
-        this.sessions.set(session.id, session);
-
-        // Recursively fetch grandchildren
-        await this.fetchChildren(server, childData.id);
-      }
-    } catch (err: any) {
-      this.debugLog(`Failed to fetch children of ${parentId}: ${err.message}`);
-    }
-  }
-
-  /**
-   * Refresh sessions from all servers
+   * Refresh sessions from all servers (periodic sync)
    */
   private async refreshAllSessions(): Promise<void> {
     for (const server of this.servers.values()) {
@@ -636,8 +752,9 @@ export class ConnectionManager {
    * Get sessions for a server
    */
   getServerSessions(serverUrl: string): Session[] {
+    const normUrl = normalizeUrl(serverUrl);
     return Array.from(this.sessions.values()).filter(
-      (s) => s.serverUrl === serverUrl,
+      (s) => normalizeUrl(s.serverUrl) === normUrl,
     );
   }
 
@@ -684,6 +801,7 @@ export class ConnectionManager {
 
     this.servers.clear();
     this.sessions.clear();
+    this.fetchingSessions.clear();
   }
 
   // ---------------------------------------------------------------------------
@@ -723,6 +841,7 @@ export class ConnectionManager {
   // ---------------------------------------------------------------------------
 
   private debugLog(message: string): void {
+    trace(`[debugLog] ${message}`);
     if (DEBUG_FLAGS?.sse || DEBUG_FLAGS?.state) {
       console.error(`[connections] ${message}`);
     }
@@ -762,9 +881,6 @@ export interface ConnectionState {
 
 /**
  * React hook for using the ConnectionManager
- *
- * Provides reactive state that updates when servers/sessions change.
- * Manages lifecycle (cleanup on unmount).
  */
 export function useConnectionManager(): {
   state: ConnectionState;
