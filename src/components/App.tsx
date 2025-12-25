@@ -15,6 +15,7 @@ import { DetailView } from "./DetailView.js";
 import { SessionView } from "./SessionView.js";
 import { HelpBar } from "./HelpBar.js";
 import { SessionWatcher } from "./SessionWatcher.js";
+import { getGroupedViewItems } from "./view-utils.js";
 import type { Instance } from "../types.js";
 
 // Spinner context to share frame across components
@@ -60,13 +61,17 @@ export function App(): React.ReactElement {
     return () => clearInterval(interval);
   }, [hasBusyInstances]);
 
-  // Map sessions to instances for navigation and selection
+  // Unified view items for selection and rendering consistency
+  const groupedViewItems = useMemo(
+    () => getGroupedViewItems(sessions, servers, collapsedGroups),
+    [sessions, servers, collapsedGroups],
+  );
+
+  // Still need instances for FlatView and searching by ID
   const instances = useMemo(() => {
     const list: Instance[] = [];
     for (const session of sessions.values()) {
-      const server = Array.from(servers.values()).find(
-        (s) => s.serverUrl === session.serverUrl,
-      );
+      const server = servers.get(session.serverUrl);
       if (!server) continue;
 
       list.push({
@@ -80,7 +85,7 @@ export function App(): React.ReactElement {
         branch: server.branch,
         serverUrl: server.serverUrl,
         title: session.title,
-        ts: session.statsUpdatedAt || Date.now(),
+        ts: session.discoveredAt || Date.now(),
         cost: session.cost,
         tokens: session.tokens,
         model: session.model,
@@ -93,28 +98,10 @@ export function App(): React.ReactElement {
     );
   }, [sessions, servers]);
 
-  const getGroupedInstances = useCallback((): [string, Instance[]][] => {
-    const groups = new Map<string, Instance[]>();
-    for (const inst of instances) {
-      const project = inst.project || inst.dirName || "unknown";
-      const branch = inst.branch || "main";
-      const key = `${project}:${branch}`;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(inst);
-    }
-    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [instances]);
-
   const getSelectableItemCount = useCallback((): number => {
     if (viewMode === "flat") return instances.length;
-    const groups = getGroupedInstances();
-    let count = 0;
-    for (const [groupKey, groupInstances] of groups) {
-      count++;
-      if (!collapsedGroups.has(groupKey)) count += groupInstances.length;
-    }
-    return count;
-  }, [viewMode, instances.length, getGroupedInstances, collapsedGroups]);
+    return groupedViewItems.length;
+  }, [viewMode, instances.length, groupedViewItems.length]);
 
   const getSelectedItem = useCallback((): {
     type: "group" | "instance";
@@ -127,27 +114,12 @@ export function App(): React.ReactElement {
         ? { type: "instance", instanceId: instances[selectedIndex].instanceId }
         : null;
     }
-    const groups = getGroupedInstances();
-    let idx = 0;
-    for (const [groupKey, groupInstances] of groups) {
-      if (idx === selectedIndex) return { type: "group", key: groupKey };
-      idx++;
-      if (!collapsedGroups.has(groupKey)) {
-        for (const inst of groupInstances) {
-          if (idx === selectedIndex)
-            return { type: "instance", instanceId: inst.instanceId };
-          idx++;
-        }
-      }
-    }
-    return null;
-  }, [
-    selectedIndex,
-    viewMode,
-    instances,
-    getGroupedInstances,
-    collapsedGroups,
-  ]);
+    const item = groupedViewItems[selectedIndex];
+    if (!item) return null;
+
+    if (item.type === "group") return { type: "group", key: item.groupKey };
+    return { type: "instance", instanceId: item.instance?.instanceId };
+  }, [selectedIndex, viewMode, instances, groupedViewItems]);
 
   useInput((input, key) => {
     // Global shortcuts
