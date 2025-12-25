@@ -471,9 +471,9 @@ export class ConnectionManager {
                 ? `${server.project}:${server.branch}`
                 : server.project;
               showDesktopNotification(
-                "OpenCode",
+                "OpenCode - Task Completed",
                 context,
-                updatedSession.title || "Session is idle",
+                updatedSession.title || "Session is now idle",
               );
             }
 
@@ -516,9 +516,9 @@ export class ConnectionManager {
                 ? `${server.project}:${server.branch}`
                 : server.project;
               showDesktopNotification(
-                "OpenCode",
+                "OpenCode - Task Completed",
                 context,
-                updatedSession.title || "Session is idle",
+                updatedSession.title || "Session is now idle",
               );
             }
             trace(
@@ -587,7 +587,7 @@ export class ConnectionManager {
             showDesktopNotification(
               "OpenCode - Permission Required",
               context,
-              `Tool: ${tool}`,
+              `The agent is requesting permission to use: ${tool}`,
             );
 
             this.sessions.set(sessionId, updatedSession);
